@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selection: AppScreen = .home
+    @State private var selection: AppScreen = .startShift
 
     var body: some View {
         HStack(spacing: 0) {
@@ -16,6 +16,8 @@ struct ContentView: View {
 
             Group {
                 switch selection {
+                case .startShift:
+                    StartShiftScreen()
                 case .home:
                     HomeScreen()
                 case .chat:
