@@ -3,10 +3,14 @@
 //  stock-inventory-ai-ios
 //
 
+import CoreData
 import SwiftUI
 
 struct InventoryScreen: View {
-    @State private var entries: [StockEntry] = StockStore.all()
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
+    )
+    private var entries: FetchedResults<StockEntryEntity>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -14,12 +18,9 @@ struct InventoryScreen: View {
                 Text("Stok Bahan")
                     .font(.title2.bold())
                 Spacer()
-                Button {
-                    entries = StockStore.all()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
+                Text("\(entries.count) item")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
 
             if entries.isEmpty {
@@ -38,28 +39,27 @@ struct InventoryScreen: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
-            entries = StockStore.all()
-        }
     }
 }
 
 private struct InventoryRow: View {
-    let entry: StockEntry
+    let entry: StockEntryEntity
 
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry.itemName)
+                Text(entry.itemName ?? "")
                     .font(.headline)
-                Text(entry.date, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let date = entry.date {
+                    Text(date, style: .date)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
 
-            Text("\(entry.quantity) \(entry.unit)")
+            Text("\(entry.quantity) \(entry.unit ?? "")")
                 .font(.subheadline.bold())
         }
         .padding(.vertical, 6)
@@ -68,4 +68,5 @@ private struct InventoryRow: View {
 
 #Preview {
     InventoryScreen()
+        .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
 }
