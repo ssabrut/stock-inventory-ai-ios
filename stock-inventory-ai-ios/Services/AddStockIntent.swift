@@ -24,6 +24,17 @@ struct AddStockIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        let confirmDialog = IntentDialog("Tambah \(quantity) \(unit) \(itemName) ke stok, benar?")
+
+        do {
+            try await requestConfirmation(
+                actionName: .do,
+                dialog: confirmDialog
+            )
+        } catch {
+            return .result(dialog: IntentDialog("Baik, dibatalkan. Silakan ulangi dengan data yang benar."))
+        }
+
         let entry = StockStore.add(itemName: itemName, quantity: quantity, unit: unit)
         let dialog = IntentDialog("Berhasil menambahkan \(entry.quantity) \(entry.unit) \(entry.itemName) ke stok.")
         return .result(dialog: dialog)
