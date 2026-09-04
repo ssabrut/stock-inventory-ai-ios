@@ -18,18 +18,10 @@ struct ContentView: View {
                 switch selection {
                 case .startShift:
                     StartShiftScreen()
-                case .home:
-                    HomeScreen()
                 case .chat:
                     ChatScreen()
-                case .recap:
-                    RecapScreen()
                 case .restock:
                     RestockScreen()
-                case .receipt:
-                    ReceiptScreen()
-                case .posEditor:
-                    POSEditorScreen()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
