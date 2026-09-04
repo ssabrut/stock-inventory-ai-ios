@@ -144,6 +144,11 @@ struct StockAppShortcuts: AppShortcutsProvider {
             phrases: [
                 "Tambah stok di \(.applicationName)",
                 "Tambah stok pakai \(.applicationName)",
+                "Tambah stok gram di \(.applicationName)",
+                "Tambah stok kilogram di \(.applicationName)",
+                "Tambah stok liter di \(.applicationName)",
+                "Tambah stok pcs di \(.applicationName)",
+                "Tambah stok box di \(.applicationName)",
                 "Add stock in \(.applicationName)"
             ],
             shortTitle: "Tambah Stok",
