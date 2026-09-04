@@ -27,6 +27,8 @@ struct ContentView: View {
                             ChatScreen(llm: llm)
                         case .restock:
                             RestockScreen()
+                        case .settings:
+                            SettingsScreen(llm: llm)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

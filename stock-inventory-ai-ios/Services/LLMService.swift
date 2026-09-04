@@ -33,9 +33,11 @@ final class LLMService {
     /// ~1GB download survives Xcode debug reinstalls (which can purge Caches).
     /// HF token is baked in from Secrets.xcconfig (gitignored) at build time via
     /// INFOPLIST_KEY_HFToken, never a scheme env var, so it can't leak into git.
+    static let downloadBase = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        .appending(path: "huggingface")
+
     private let hub = HubApi(
-        downloadBase: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appending(path: "huggingface"),
+        downloadBase: downloadBase,
         hfToken: {
             let token = Bundle.main.infoDictionary?["HFToken"] as? String
             return (token?.isEmpty == false && token != "$(HF_TOKEN)") ? token : nil
@@ -172,5 +174,73 @@ final class LLMService {
         }
 
         return ParsedStockEntry(itemName: itemName, quantity: parsed.quantity, unit: parsed.unit)
+    }
+
+    struct CachedModel: Identifiable {
+        let id: String
+        let url: URL
+        let sizeBytes: Int64
+        let isActive: Bool
+    }
+
+    /// Lists every downloaded model repo under Documents/huggingface/models,
+    /// e.g. after switching modelId this surfaces the previous model's now-
+    /// orphaned weights so the user can reclaim the disk space manually.
+    func cachedModels() -> [CachedModel] {
+        let modelsRoot = LLMService.downloadBase.appending(component: "models")
+        let fm = FileManager.default
+
+        guard let orgDirs = try? fm.contentsOfDirectory(at: modelsRoot, includingPropertiesForKeys: nil) else {
+            return []
+        }
+
+        var results: [CachedModel] = []
+        for orgDir in orgDirs {
+            guard let repoDirs = try? fm.contentsOfDirectory(at: orgDir, includingPropertiesForKeys: nil) else { continue }
+            for repoDir in repoDirs {
+                let id = "\(orgDir.lastPathComponent)/\(repoDir.lastPathComponent)"
+                results.append(
+                    CachedModel(
+                        id: id,
+                        url: repoDir,
+                        sizeBytes: Self.directorySize(repoDir),
+                        isActive: id == modelId
+                    )
+                )
+            }
+        }
+        return results.sorted { $0.id < $1.id }
+    }
+
+    /// Deletes one cached model's weights from disk. Throws if it's the
+    /// currently loaded model — that would corrupt the live ModelContainer
+    /// mid-session; the caller should have the user switch away first, or
+    /// this app relaunch after.
+    func deleteCachedModel(_ model: CachedModel) throws {
+        guard !model.isActive || modelContainer == nil else {
+            throw NSError(
+                domain: "LLMService", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Tidak bisa menghapus model yang sedang aktif digunakan."]
+            )
+        }
+        try FileManager.default.removeItem(at: model.url)
+    }
+
+    func deleteAllCachedModels() throws {
+        for model in cachedModels() {
+            try deleteCachedModel(model)
+        }
+    }
+
+    private static func directorySize(_ url: URL) -> Int64 {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
     }
 }
