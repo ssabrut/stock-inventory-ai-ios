@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		A78017CD304A6933003646D6 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = A78017CC304A6933003646D6 /* MLXLLM */; };
 		A78017CF304A6933003646D6 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = A78017CE304A6933003646D6 /* MLXLMCommon */; };
+		A78017EE304A8679003646D6 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = A78017ED304A8679003646D6 /* Hub */; };
+		A78017F0304A8679003646D6 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017EF304A8679003646D6 /* Tokenizers */; };
+		A78017F2304A8679003646D6 /* Transformers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017F1304A8679003646D6 /* Transformers */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +31,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A78017F0304A8679003646D6 /* Tokenizers in Frameworks */,
+				A78017EE304A8679003646D6 /* Hub in Frameworks */,
+				A78017F2304A8679003646D6 /* Transformers in Frameworks */,
 				A78017CF304A6933003646D6 /* MLXLMCommon in Frameworks */,
 				A78017CD304A6933003646D6 /* MLXLLM in Frameworks */,
 			);
@@ -82,6 +88,9 @@
 			packageProductDependencies = (
 				A78017CC304A6933003646D6 /* MLXLLM */,
 				A78017CE304A6933003646D6 /* MLXLMCommon */,
+				A78017ED304A8679003646D6 /* Hub */,
+				A78017EF304A8679003646D6 /* Tokenizers */,
+				A78017F1304A8679003646D6 /* Transformers */,
 			);
 			productName = "stock-inventory-ai-ios";
 			productReference = A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */;
@@ -113,6 +122,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
+				A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A73FE19F30471DE800FD3456 /* Products */;
@@ -366,6 +376,14 @@
 				minimumVersion = 2.29.1;
 			};
 		};
+		A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -378,6 +396,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
 			productName = MLXLMCommon;
+		};
+		A78017ED304A8679003646D6 /* Hub */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Hub;
+		};
+		A78017EF304A8679003646D6 /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
+		};
+		A78017F1304A8679003646D6 /* Transformers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Transformers;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
