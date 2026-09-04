@@ -12,10 +12,12 @@
 		A78017EE304A8679003646D6 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = A78017ED304A8679003646D6 /* Hub */; };
 		A78017F0304A8679003646D6 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017EF304A8679003646D6 /* Tokenizers */; };
 		A78017F2304A8679003646D6 /* Transformers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017F1304A8679003646D6 /* Transformers */; };
+		A7801824304A9C46003646D6 /* Secrets.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = A7801823304A9C46003646D6 /* Secrets.xcconfig */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "stock-inventory-ai-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7801823304A9C46003646D6 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -48,6 +50,7 @@
 				A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */,
 				A78017CB304A6933003646D6 /* Frameworks */,
 				A73FE19F30471DE800FD3456 /* Products */,
+				A7801823304A9C46003646D6 /* Secrets.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
@@ -139,6 +142,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7801824304A9C46003646D6 /* Secrets.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -157,6 +161,7 @@
 /* Begin XCBuildConfiguration section */
 		A73FE1A730471DE900FD3456 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7801823304A9C46003646D6 /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -221,6 +226,7 @@
 		};
 		A73FE1A830471DE900FD3456 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7801823304A9C46003646D6 /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -278,6 +284,7 @@
 		};
 		A73FE1AA30471DE900FD3456 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7801823304A9C46003646D6 /* Secrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -287,6 +294,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Stock AI";
+				INFOPLIST_KEY_HFToken = "$(HF_TOKEN)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -312,6 +320,7 @@
 		};
 		A73FE1AB30471DE900FD3456 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7801823304A9C46003646D6 /* Secrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -321,6 +330,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Stock AI";
+				INFOPLIST_KEY_HFToken = "$(HF_TOKEN)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

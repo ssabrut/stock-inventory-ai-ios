@@ -25,9 +25,15 @@ final class LLMService {
 
     /// Persists downloaded model weights to Documents instead of Caches, so the
     /// ~1GB download survives Xcode debug reinstalls (which can purge Caches).
+    /// HF token is baked in from Secrets.xcconfig (gitignored) at build time via
+    /// INFOPLIST_KEY_HFToken, never a scheme env var, so it can't leak into git.
     private let hub = HubApi(
         downloadBase: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appending(path: "huggingface")
+            .appending(path: "huggingface"),
+        hfToken: {
+            let token = Bundle.main.infoDictionary?["HFToken"] as? String
+            return (token?.isEmpty == false && token != "$(HF_TOKEN)") ? token : nil
+        }()
     )
 
     func loadIfNeeded() async {
