@@ -10,9 +10,19 @@ struct AddStockIntent: AppIntent {
     static var title: LocalizedStringResource = "Tambah Stok"
     static var description = IntentDescription("Menambahkan stok barang secara verbal lewat Siri.")
 
-    /// Hard cap on items per Siri session so the confirm/continue chain
-    /// below can't run forever if something upstream misbehaves.
+    /// Hard cap on items per Siri session so the loop below can't run
+    /// forever if a done-word is never spoken.
     private static let maxItemsPerSession = 10
+
+    /// Words that end the add-items loop when spoken in place of a new item.
+    /// Saying "no" to a requestConfirmation(snippetIntent:) turns out to
+    /// hard-terminate perform() at the Siri level — any code after it (even
+    /// inside a catch) never runs — so the mid-session "add another?" gate
+    /// can't be a confirmation at all. A spoken done-word checked against a
+    /// requestValue reply sidesteps that entirely: only one confirmation
+    /// exists in this flow (the final review), where decline-cancels-all is
+    /// the correct behavior anyway.
+    private static let doneWords: Set<String> = ["selesai", "cukup", "sudah", "done", "stop"]
 
     @Parameter(title: "Detail Stok")
     var rawText: String
@@ -31,25 +41,26 @@ struct AddStockIntent: AppIntent {
             return .result(dialog: IntentDialog("Maaf, tidak bisa memahami itu. Coba ulangi, misal: tambah 50 gram ayam."))
         }
 
-        // Keep asking for one more item at a time, showing the running
-        // pending list each turn, until the user declines (requestConfirmation
-        // throws on decline) or we hit the cap.
+        // Keep asking for one more item at a time until the user says a
+        // done-word or we hit the cap. No confirmation dialog in this loop
+        // — see doneWords doc comment for why.
         while pending.count < Self.maxItemsPerSession {
-            do {
-                try await requestConfirmation(
-                    actionName: .add,
-                    dialog: IntentDialog("Ditambahkan ke sesi: \(pending.count) item. Tambah item lagi?"),
-                    snippetIntent: AddAnotherItemSnippet(summary: Self.formatSummary(pending))
-                )
-            } catch {
-                break
-            }
+            let dialog = IntentDialog(
+                """
+                Sudah ditambahkan ke sesi:
+                \(Self.formatSummary(pending))
 
-            let dialog = IntentDialog("Sebutkan item berikutnya.")
+                Sebutkan item berikutnya, atau ucapkan 'selesai' jika sudah.
+                """
+            )
             let phrase: String
             do {
                 phrase = try await $rawText.requestValue(dialog)
             } catch {
+                break
+            }
+
+            if Self.doneWords.contains(phrase.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                 break
             }
 
@@ -89,31 +100,9 @@ struct AddStockIntent: AppIntent {
     }
 }
 
-/// Confirmation step shown between items: displays the running pending list.
-/// requestConfirmation(snippetIntent:) renders this view with system
-/// accept/decline chrome — accepting resumes AddStockIntent's loop,
-/// declining throws (caught by the loop, which then moves to final review).
-struct AddAnotherItemSnippet: SnippetIntent {
-    static var title: LocalizedStringResource = "Item Berikutnya"
-
-    @Parameter var summary: String
-
-    init() {
-        summary = ""
-    }
-
-    init(summary: String) {
-        self.summary = summary
-    }
-
-    func perform() async throws -> some IntentResult & ShowsSnippetView {
-        .result(view: PendingStockSummaryView(title: "Stok Sesi Ini", summary: summary))
-    }
-}
-
 /// Final review step before committing: shows every pending item and, via
 /// requestConfirmation(snippetIntent:), asks the user to accept or decline
-/// the whole batch.
+/// the whole batch. This is the only confirmation in the flow.
 struct ReviewPendingStockSnippet: SnippetIntent {
     static var title: LocalizedStringResource = "Konfirmasi Stok"
 
