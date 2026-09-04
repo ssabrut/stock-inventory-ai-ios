@@ -13,21 +13,33 @@ struct ChatMessage: Identifiable {
 
 struct ChatScreen: View {
     @State private var messages: [ChatMessage] = [
-        ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu soal stok hari ini?"),
-        ChatMessage(isUser: true, text: "Stok minyak goreng masih berapa?")
+        ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu soal stok hari ini?")
     ]
     @State private var draft: String = ""
+    @State private var llm = LLMService()
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Tanya AI")
-                    .font(.title2.bold())
+                HStack {
+                    Text("Tanya AI")
+                        .font(.title2.bold())
+                    Spacer()
+                    statusView
+                }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(messages) { message in
-                            ChatBubble(message: message)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(messages) { message in
+                                ChatBubble(message: message)
+                                    .id(message.id)
+                            }
+                        }
+                    }
+                    .onChange(of: messages.count) {
+                        if let last = messages.last {
+                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                         }
                     }
                 }
@@ -40,16 +52,15 @@ struct ChatScreen: View {
                         .background(
                             Capsule().stroke(Color.gray.opacity(0.4), lineWidth: 1)
                         )
+                        .disabled(llm.state == .generating)
+                        .onSubmit(send)
 
-                    Button {
-                        guard !draft.isEmpty else { return }
-                        messages.append(ChatMessage(isUser: true, text: draft))
-                        draft = ""
-                    } label: {
+                    Button(action: send) {
                         Image(systemName: "arrow.up.circle")
                             .font(.system(size: 26))
                     }
                     .buttonStyle(.plain)
+                    .disabled(draft.isEmpty || llm.state == .generating)
                 }
             }
             .padding(24)
@@ -62,6 +73,54 @@ struct ChatScreen: View {
                 .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task {
+            await llm.loadIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private var statusView: some View {
+        switch llm.state {
+        case .idle:
+            EmptyView()
+        case .loading(let progress):
+            HStack(spacing: 6) {
+                ProgressView(value: progress)
+                    .frame(width: 80)
+                Text("Memuat model…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .ready:
+            EmptyView()
+        case .generating:
+            HStack(spacing: 6) {
+                ProgressView()
+                Text("Mengetik…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .failed(let message):
+            Text("Error: \(message)")
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func send() {
+        let text = draft
+        guard !text.isEmpty else { return }
+        messages.append(ChatMessage(isUser: true, text: text))
+        draft = ""
+
+        Task {
+            do {
+                let reply = try await llm.reply(to: text)
+                messages.append(ChatMessage(isUser: false, text: reply))
+            } catch {
+                messages.append(ChatMessage(isUser: false, text: "Maaf, terjadi kesalahan: \(error.localizedDescription)"))
+            }
+        }
     }
 }
 

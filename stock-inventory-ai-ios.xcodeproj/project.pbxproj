@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A78017CD304A6933003646D6 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = A78017CC304A6933003646D6 /* MLXLLM */; };
+		A78017CF304A6933003646D6 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = A78017CE304A6933003646D6 /* MLXLMCommon */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "stock-inventory-ai-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +28,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A78017CF304A6933003646D6 /* MLXLMCommon in Frameworks */,
+				A78017CD304A6933003646D6 /* MLXLLM in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,6 +40,7 @@
 			isa = PBXGroup;
 			children = (
 				A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */,
+				A78017CB304A6933003646D6 /* Frameworks */,
 				A73FE19F30471DE800FD3456 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +51,13 @@
 				A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A78017CB304A6933003646D6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -65,6 +80,8 @@
 			);
 			name = "stock-inventory-ai-ios";
 			packageProductDependencies = (
+				A78017CC304A6933003646D6 /* MLXLLM */,
+				A78017CE304A6933003646D6 /* MLXLMCommon */,
 			);
 			productName = "stock-inventory-ai-ios";
 			productReference = A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */;
@@ -94,6 +111,9 @@
 			);
 			mainGroup = A73FE19530471DE800FD3456;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A73FE19F30471DE800FD3456 /* Products */;
 			projectDirPath = "";
@@ -259,8 +279,9 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -291,8 +312,9 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -332,6 +354,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.29.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A78017CC304A6933003646D6 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLLM;
+		};
+		A78017CE304A6933003646D6 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A73FE19630471DE800FD3456 /* Project object */;
 }
