@@ -12,11 +12,14 @@ struct ChatMessage: Identifiable {
 }
 
 struct ChatScreen: View {
+    let qnaService: QnaServicing = QnaService()
+
     @State private var messages: [ChatMessage] = [
-        ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu soal stok hari ini?"),
-        ChatMessage(isUser: true, text: "Stok minyak goreng masih berapa?")
+        ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu soal stok hari ini?")
     ]
     @State private var draft: String = ""
+    @State private var isSending = false
+    @State private var errorMessage: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -24,12 +27,37 @@ struct ChatScreen: View {
                 Text("Tanya AI")
                     .font(.title2.bold())
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(messages) { message in
-                            ChatBubble(message: message)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(messages) { message in
+                                ChatBubble(message: message)
+                                    .id(message.id)
+                            }
+                            if isSending {
+                                HStack {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Mengetik...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
+                    .onChange(of: messages.count) {
+                        if let lastId = messages.last?.id {
+                            withAnimation {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
 
                 HStack(spacing: 12) {
@@ -40,16 +68,15 @@ struct ChatScreen: View {
                         .background(
                             Capsule().stroke(Color.gray.opacity(0.4), lineWidth: 1)
                         )
+                        .disabled(isSending)
+                        .onSubmit(sendMessage)
 
-                    Button {
-                        guard !draft.isEmpty else { return }
-                        messages.append(ChatMessage(isUser: true, text: draft))
-                        draft = ""
-                    } label: {
+                    Button(action: sendMessage) {
                         Image(systemName: "arrow.up.circle")
                             .font(.system(size: 26))
                     }
                     .buttonStyle(.plain)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
                 }
             }
             .padding(24)
@@ -62,6 +89,26 @@ struct ChatScreen: View {
                 .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func sendMessage() {
+        let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isSending else { return }
+
+        messages.append(ChatMessage(isUser: true, text: question))
+        draft = ""
+        errorMessage = nil
+        isSending = true
+
+        Task {
+            do {
+                let answer = try await qnaService.ask(question: question)
+                messages.append(ChatMessage(isUser: false, text: answer))
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSending = false
+        }
     }
 }
 
