@@ -6,7 +6,7 @@
 import Foundation
 import Hub
 import MLXLLM
-import MLXLMCommon
+@preconcurrency import MLXLMCommon
 
 @Observable
 final class LLMService {
