@@ -6,7 +6,7 @@
 import SwiftUI
 
 enum AppScreen: String, CaseIterable, Identifiable {
-    case startShift
+    case inventory
     case chat
     case restock
 
@@ -14,7 +14,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .startShift: return "clock.badge.checkmark"
+        case .inventory: return "shippingbox.fill"
         case .chat: return "bubble.left.and.bubble.right.fill"
         case .restock: return "arrow.triangle.2.circlepath"
         }
@@ -22,7 +22,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .startShift: return "Mulai Shift"
+        case .inventory: return "Stok Bahan"
         case .chat: return "Tanya AI"
         case .restock: return "Saran Restock"
         }

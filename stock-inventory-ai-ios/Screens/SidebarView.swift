@@ -45,5 +45,5 @@ struct SidebarView: View {
 }
 
 #Preview {
-    SidebarView(selection: .constant(.startShift))
+    SidebarView(selection: .constant(.inventory))
 }

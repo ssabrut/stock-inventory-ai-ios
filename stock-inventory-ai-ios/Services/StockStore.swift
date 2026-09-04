@@ -3,6 +3,7 @@
 //  stock-inventory-ai-ios
 //
 
+import CoreData
 import Foundation
 
 struct StockEntry: Identifiable, Codable {
@@ -12,8 +13,8 @@ struct StockEntry: Identifiable, Codable {
     let unit: String
     let date: Date
 
-    init(itemName: String, quantity: Int, unit: String, date: Date = .now) {
-        self.id = UUID()
+    init(id: UUID = UUID(), itemName: String, quantity: Int, unit: String, date: Date = .now) {
+        self.id = id
         self.itemName = itemName
         self.quantity = quantity
         self.unit = unit
@@ -21,31 +22,46 @@ struct StockEntry: Identifiable, Codable {
     }
 }
 
-/// Minimal UserDefaults-backed store so both the app UI and the Siri AppIntent
-/// (which runs out-of-process) can read/write the same stock data.
+/// Core Data-backed store so both the app UI and the Siri AppIntent (which
+/// runs out-of-process) can read/write the same stock data via the shared
+/// App Group persistent store. See PersistenceController.
 enum StockStore {
-    private static let defaultsKey = "stockEntries"
-    private static let suiteName = "group.stock-inventory-ai-ios"
-
-    private static var defaults: UserDefaults {
-        UserDefaults(suiteName: suiteName) ?? .standard
+    private static var context: NSManagedObjectContext {
+        PersistenceController.shared.viewContext
     }
 
     static func all() -> [StockEntry] {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let entries = try? JSONDecoder().decode([StockEntry].self, from: data)
-        else { return [] }
-        return entries.sorted { $0.date > $1.date }
+        let request = StockEntryEntity.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
+
+        guard let results = try? context.fetch(request) else { return [] }
+        return results.map { $0.asStockEntry }
     }
 
     @discardableResult
     static func add(itemName: String, quantity: Int, unit: String) -> StockEntry {
         let entry = StockEntry(itemName: itemName, quantity: quantity, unit: unit)
-        var entries = all()
-        entries.append(entry)
-        if let data = try? JSONEncoder().encode(entries) {
-            defaults.set(data, forKey: defaultsKey)
-        }
+
+        let entity = StockEntryEntity(context: context)
+        entity.id = entry.id
+        entity.itemName = entry.itemName
+        entity.quantity = Int32(entry.quantity)
+        entity.unit = entry.unit
+        entity.date = entry.date
+
+        try? context.save()
         return entry
+    }
+}
+
+private extension StockEntryEntity {
+    var asStockEntry: StockEntry {
+        StockEntry(
+            id: id ?? UUID(),
+            itemName: itemName ?? "",
+            quantity: Int(quantity),
+            unit: unit ?? "",
+            date: date ?? .now
+        )
     }
 }

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selection: AppScreen = .startShift
+    @State private var selection: AppScreen = .inventory
     @State private var llm = LLMService()
     @State private var didSkipModelLoad = false
     @State private var hasLoadedOnce = false
@@ -21,8 +21,8 @@ struct ContentView: View {
 
                     Group {
                         switch selection {
-                        case .startShift:
-                            StartShiftScreen()
+                        case .inventory:
+                            InventoryScreen()
                         case .chat:
                             ChatScreen(llm: llm)
                         case .restock:
