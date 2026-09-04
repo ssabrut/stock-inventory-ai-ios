@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import Hub
 import MLXLLM
 import MLXLMCommon
 
@@ -22,13 +23,20 @@ final class LLMService {
     private var modelContainer: ModelContainer?
     private let modelId = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
 
+    /// Persists downloaded model weights to Documents instead of Caches, so the
+    /// ~1GB download survives Xcode debug reinstalls (which can purge Caches).
+    private let hub = HubApi(
+        downloadBase: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appending(path: "huggingface")
+    )
+
     func loadIfNeeded() async {
         guard modelContainer == nil else { return }
         state = .loading(progress: 0)
         do {
             let factory = LLMModelFactory.shared
             let configuration = ModelConfiguration(id: modelId)
-            modelContainer = try await factory.loadContainer(configuration: configuration) { [weak self] progress in
+            modelContainer = try await factory.loadContainer(hub: hub, configuration: configuration) { [weak self] progress in
                 Task { @MainActor in
                     self?.state = .loading(progress: progress.fractionCompleted)
                 }
