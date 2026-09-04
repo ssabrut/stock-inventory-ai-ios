@@ -52,6 +52,27 @@ enum StockStore {
         try? context.save()
         return entry
     }
+
+    /// Writes several entries in one Core Data save, used by AddStockIntent
+    /// after the user confirms the full pending list from a Siri session.
+    @discardableResult
+    static func add(_ entries: [(itemName: String, quantity: Int, unit: String)]) -> [StockEntry] {
+        let results = entries.map { item -> StockEntry in
+            let entry = StockEntry(itemName: item.itemName, quantity: item.quantity, unit: item.unit)
+
+            let entity = StockEntryEntity(context: context)
+            entity.id = entry.id
+            entity.itemName = entry.itemName
+            entity.quantity = Int32(entry.quantity)
+            entity.unit = entry.unit
+            entity.date = entry.date
+
+            return entry
+        }
+
+        try? context.save()
+        return results
+    }
 }
 
 private extension StockEntryEntity {
