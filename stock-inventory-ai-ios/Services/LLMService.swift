@@ -111,4 +111,63 @@ final class LLMService {
 
         return result
     }
+
+    struct ParsedStockEntry: Decodable {
+        let itemName: String
+        let quantity: Int
+        let unit: String
+    }
+
+    /// Extracts item name/quantity/unit from a free-text stock phrase, e.g.
+    /// "50gr of chicken" -> {itemName: "chicken", quantity: 50, unit: "gr"}.
+    /// Used by AddStockIntent so Siri can take one free-text parameter
+    /// instead of relying on its own quantity/unit slot-filling, which
+    /// tends to default to "1 pcs" on fused phrases like "50gr".
+    func parseStockPhrase(_ text: String) async throws -> ParsedStockEntry {
+        await loadIfNeeded()
+        guard let modelContainer else {
+            throw NSError(domain: "LLMService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
+        }
+
+        state = .generating
+        defer { state = .ready }
+
+        let systemPrompt = """
+        Ekstrak nama barang, jumlah, dan satuan dari teks stok gudang. \
+        Balas HANYA dengan JSON valid tanpa teks lain, format: \
+        {"itemName": string, "quantity": integer, "unit": string}. \
+        Jika satuan tidak disebutkan, gunakan "pcs". Jika jumlah tidak disebutkan, gunakan 1.
+        """
+
+        let chat: [Chat.Message] = [
+            .system(systemPrompt),
+            .user(text)
+        ]
+
+        let raw = try await modelContainer.perform { context in
+            let input = try await context.processor.prepare(input: .init(chat: chat))
+            var output = ""
+            let stream = try MLXLMCommon.generate(
+                input: input,
+                parameters: GenerateParameters(temperature: 0.0),
+                context: context
+            )
+            for try await item in stream {
+                if case .chunk(let text) = item {
+                    output += text
+                }
+            }
+            return output
+        }
+
+        guard let jsonStart = raw.firstIndex(of: "{"),
+              let jsonEnd = raw.lastIndex(of: "}")
+        else {
+            throw NSError(domain: "LLMService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not parse stock phrase"])
+        }
+
+        let jsonSubstring = raw[jsonStart...jsonEnd]
+        let data = Data(jsonSubstring.utf8)
+        return try JSONDecoder().decode(ParsedStockEntry.self, from: data)
+    }
 }
