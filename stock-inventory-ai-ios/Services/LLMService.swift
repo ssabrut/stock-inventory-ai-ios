@@ -123,7 +123,15 @@ final class LLMService {
     /// Used by AddStockIntent so Siri can take one free-text parameter
     /// instead of relying on its own quantity/unit slot-filling, which
     /// tends to default to "1 pcs" on fused phrases like "50gr".
+    ///
+    /// Quantity/unit come from StockPhraseParser (deterministic, dictionary
+    /// based) rather than the LLM — the LLM was unreliable at extracting
+    /// units, e.g. it would drop an explicit "gram" and default to "pcs"
+    /// despite being told not to. The LLM here only cleans up the
+    /// leftover text into an item name, a task it's better suited for.
     func parseStockPhrase(_ text: String) async throws -> ParsedStockEntry {
+        let parsed = StockPhraseParser.parse(text)
+
         await loadIfNeeded()
         guard let modelContainer else {
             throw NSError(domain: "LLMService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
@@ -133,15 +141,13 @@ final class LLMService {
         defer { state = .ready }
 
         let systemPrompt = """
-        Ekstrak nama barang, jumlah, dan satuan dari teks stok gudang. \
-        Balas HANYA dengan JSON valid tanpa teks lain, format: \
-        {"itemName": string, "quantity": integer, "unit": string}. \
-        Jika satuan tidak disebutkan, gunakan "pcs". Jika jumlah tidak disebutkan, gunakan 1.
+        Bersihkan teks ini menjadi nama barang gudang yang rapi. \
+        Balas HANYA dengan nama barangnya, tanpa tanda kutip, tanpa penjelasan lain.
         """
 
         let chat: [Chat.Message] = [
             .system(systemPrompt),
-            .user(text)
+            .user(parsed.remainingText)
         ]
 
         let raw = try await modelContainer.perform { context in
@@ -160,14 +166,11 @@ final class LLMService {
             return output
         }
 
-        guard let jsonStart = raw.firstIndex(of: "{"),
-              let jsonEnd = raw.lastIndex(of: "}")
-        else {
-            throw NSError(domain: "LLMService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not parse stock phrase"])
+        let itemName = raw.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"")))
+        guard !itemName.isEmpty else {
+            throw NSError(domain: "LLMService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not parse item name"])
         }
 
-        let jsonSubstring = raw[jsonStart...jsonEnd]
-        let data = Data(jsonSubstring.utf8)
-        return try JSONDecoder().decode(ParsedStockEntry.self, from: data)
+        return ParsedStockEntry(itemName: itemName, quantity: parsed.quantity, unit: parsed.unit)
     }
 }
