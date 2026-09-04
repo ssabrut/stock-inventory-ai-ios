@@ -12,11 +12,12 @@ struct ChatMessage: Identifiable {
 }
 
 struct ChatScreen: View {
+    let llm: LLMService
+
     @State private var messages: [ChatMessage] = [
         ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu soal stok hari ini?")
     ]
     @State private var draft: String = ""
-    @State private var llm = LLMService()
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -73,25 +74,12 @@ struct ChatScreen: View {
                 .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task {
-            await llm.loadIfNeeded()
-        }
     }
 
     @ViewBuilder
     private var statusView: some View {
         switch llm.state {
-        case .idle:
-            EmptyView()
-        case .loading(let progress):
-            HStack(spacing: 6) {
-                ProgressView(value: progress)
-                    .frame(width: 80)
-                Text("Memuat model…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .ready:
+        case .idle, .loading, .ready:
             EmptyView()
         case .generating:
             HStack(spacing: 6) {
@@ -181,5 +169,5 @@ private struct DataReferencePanel: View {
 }
 
 #Preview {
-    ChatScreen()
+    ChatScreen(llm: LLMService())
 }

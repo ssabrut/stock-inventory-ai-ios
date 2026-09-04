@@ -10,9 +10,15 @@ import MLXLLM
 
 @Observable
 final class LLMService {
+    enum LoadPhase: Equatable {
+        case checkingCache
+        case downloading(fraction: Double, speedMBps: Double?)
+        case loadingWeights
+    }
+
     enum State: Equatable {
         case idle
-        case loading(progress: Double)
+        case loading(LoadPhase)
         case ready
         case generating
         case failed(String)
@@ -38,13 +44,28 @@ final class LLMService {
 
     func loadIfNeeded() async {
         guard modelContainer == nil else { return }
-        state = .loading(progress: 0)
+        state = .loading(.checkingCache)
         do {
             let factory = LLMModelFactory.shared
             let configuration = ModelConfiguration(id: modelId)
+            var didSeeRealProgress = false
+
             modelContainer = try await factory.loadContainer(hub: hub, configuration: configuration) { [weak self] progress in
+                let fraction = progress.fractionCompleted
+                let speed = progress.userInfo[.throughputKey] as? Double
                 Task { @MainActor in
-                    self?.state = .loading(progress: progress.fractionCompleted)
+                    guard let self else { return }
+                    // A cache hit resolves near-instantly with no meaningful fraction
+                    // reported; only treat this as an active download once we see
+                    // real forward progress on it.
+                    if fraction > 0 { didSeeRealProgress = true }
+                    if didSeeRealProgress {
+                        if fraction < 1 {
+                            self.state = .loading(.downloading(fraction: fraction, speedMBps: speed.map { $0 / 1_000_000 }))
+                        } else {
+                            self.state = .loading(.loadingWeights)
+                        }
+                    }
                 }
             }
             state = .ready

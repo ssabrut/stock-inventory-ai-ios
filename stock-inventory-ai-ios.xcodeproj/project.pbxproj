@@ -12,7 +12,6 @@
 		A78017EE304A8679003646D6 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = A78017ED304A8679003646D6 /* Hub */; };
 		A78017F0304A8679003646D6 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017EF304A8679003646D6 /* Tokenizers */; };
 		A78017F2304A8679003646D6 /* Transformers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017F1304A8679003646D6 /* Transformers */; };
-		A7801824304A9C46003646D6 /* Secrets.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = A7801823304A9C46003646D6 /* Secrets.xcconfig */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -142,7 +141,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A7801824304A9C46003646D6 /* Secrets.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
