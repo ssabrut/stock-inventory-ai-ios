@@ -34,10 +34,14 @@ struct AddStockIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         var pending: [LLMService.ParsedStockEntry] = []
+        SiriSessionState.begin(source: .siri)
 
         do {
-            pending.append(try await LLMService().parseStockPhrase(rawText))
+            let entry = try await LLMService().parseStockPhrase(rawText)
+            pending.append(entry)
+            SiriSessionState.append(Self.dto(entry), source: .siri)
         } catch {
+            SiriSessionState.end()
             return .result(dialog: IntentDialog("Maaf, tidak bisa memahami itu. Coba ulangi, misal: tambah 50 gram ayam."))
         }
 
@@ -65,7 +69,9 @@ struct AddStockIntent: AppIntent {
             }
 
             do {
-                pending.append(try await LLMService().parseStockPhrase(phrase))
+                let entry = try await LLMService().parseStockPhrase(phrase)
+                pending.append(entry)
+                SiriSessionState.append(Self.dto(entry), source: .siri)
             } catch {
                 // Skip an unparseable item rather than aborting the whole session.
                 continue
@@ -79,13 +85,19 @@ struct AddStockIntent: AppIntent {
                 snippetIntent: ReviewPendingStockSnippet(summary: Self.formatSummary(pending))
             )
         } catch {
+            SiriSessionState.end()
             return .result(dialog: IntentDialog("Baik, dibatalkan. Tidak ada stok yang ditambahkan."))
         }
 
         StockStore.add(pending.map { (itemName: $0.itemName, quantity: $0.quantity, unit: $0.unit) })
+        SiriSessionState.end()
 
         let dialog = IntentDialog("Berhasil menambahkan \(pending.count) item ke stok.")
         return .result(dialog: dialog)
+    }
+
+    private static func dto(_ entry: LLMService.ParsedStockEntry) -> PendingStockItemDTO {
+        PendingStockItemDTO(itemName: entry.itemName, quantity: entry.quantity, unit: entry.unit)
     }
 
     /// Snippet views only receive @Parameter-wrapped properties across the
@@ -149,7 +161,13 @@ struct StockAppShortcuts: AppShortcutsProvider {
                 "Tambah stok liter di \(.applicationName)",
                 "Tambah stok pcs di \(.applicationName)",
                 "Tambah stok box di \(.applicationName)",
-                "Add stock in \(.applicationName)"
+                "Saya mau tambah stok di \(.applicationName)",
+                "Saya ingin menambahkan stok di \(.applicationName)",
+                "Tolong tambah stok di \(.applicationName)",
+                "Add stock in \(.applicationName)",
+                "I want to add stock in \(.applicationName)",
+                "I'd like to add stock to \(.applicationName)",
+                "Help me add stock in \(.applicationName)"
             ],
             shortTitle: "Tambah Stok",
             systemImageName: "shippingbox.fill"
