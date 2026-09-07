@@ -8,7 +8,6 @@ import SwiftUI
 enum AppScreen: String, CaseIterable, Identifiable {
     case inventory
     case chat
-    case restock
     case settings
 
     var id: String { rawValue }
@@ -17,7 +16,6 @@ enum AppScreen: String, CaseIterable, Identifiable {
         switch self {
         case .inventory: return "shippingbox.fill"
         case .chat: return "bubble.left.and.bubble.right.fill"
-        case .restock: return "arrow.triangle.2.circlepath"
         case .settings: return "gearshape.fill"
         }
     }
@@ -26,7 +24,6 @@ enum AppScreen: String, CaseIterable, Identifiable {
         switch self {
         case .inventory: return "Stok Bahan"
         case .chat: return "Tanya AI"
-        case .restock: return "Saran Restock"
         case .settings: return "Pengaturan"
         }
     }

@@ -26,8 +26,6 @@ struct ContentView: View {
                                 InventoryScreen()
                             case .chat:
                                 ChatScreen(llm: llm)
-                            case .restock:
-                                RestockScreen()
                             case .settings:
                                 SettingsScreen(llm: llm)
                             }
