@@ -120,6 +120,52 @@ final class LLMService {
         let unit: String
     }
 
+    /// Classifies whether a spoken segment signals the end of an add-stock
+    /// session (e.g. "selesai", "okay done", "udah segitu aja", "that's all")
+    /// rather than another item to add. Used by StockSessionOverlay's
+    /// continuous-listening flow so the done-signal isn't limited to a fixed
+    /// word list — free-form phrasing works the way Siri's own "no more
+    /// items" gate would.
+    func isDoneIntent(_ text: String) async throws -> Bool {
+        await loadIfNeeded()
+        guard let modelContainer else {
+            throw NSError(domain: "LLMService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
+        }
+
+        state = .generating
+        defer { state = .ready }
+
+        let systemPrompt = """
+        Kamu mendeteksi apakah ucapan pengguna berarti dia SUDAH SELESAI menambahkan stok \
+        (misal: "selesai", "cukup", "udah segitu aja", "that's all", "okay done"), BUKAN \
+        menyebutkan barang baru. Balas HANYA dengan "yes" jika itu sinyal selesai, atau "no" \
+        jika itu masih menyebutkan item stok (misal "50 gram ayam").
+        """
+
+        let chat: [Chat.Message] = [
+            .system(systemPrompt),
+            .user(text)
+        ]
+
+        let raw = try await modelContainer.perform { context in
+            let input = try await context.processor.prepare(input: .init(chat: chat))
+            var output = ""
+            let stream = try MLXLMCommon.generate(
+                input: input,
+                parameters: GenerateParameters(temperature: 0.0),
+                context: context
+            )
+            for try await item in stream {
+                if case .chunk(let text) = item {
+                    output += text
+                }
+            }
+            return output
+        }
+
+        return raw.lowercased().contains("yes")
+    }
+
     /// Extracts item name/quantity/unit from a free-text stock phrase, e.g.
     /// "50gr of chicken" -> {itemName: "chicken", quantity: 50, unit: "gr"}.
     /// Used by AddStockIntent so Siri can take one free-text parameter

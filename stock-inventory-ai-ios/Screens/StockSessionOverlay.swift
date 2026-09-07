@@ -23,6 +23,10 @@ struct StockSessionOverlay: View {
     @State private var isCardExpanded = false
     @State private var isParsing = false
     @State private var errorMessage: String?
+    /// Guards against re-triggering auto-listen on every refresh while a
+    /// Siri-sourced session stays active (each item append re-fires the
+    /// Darwin notification), so the mic only auto-starts once per session.
+    @State private var hasAutoStartedForSession = false
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 12) {
@@ -40,6 +44,9 @@ struct StockSessionOverlay: View {
         .animation(.spring(duration: 0.3), value: items)
         .task {
             _ = await voice.requestAuthorization()
+            voice.onSegment = { segment in
+                handleSegment(segment)
+            }
             refreshFromSharedState()
             SiriSessionState.observe {
                 refreshFromSharedState()
@@ -89,10 +96,12 @@ struct StockSessionOverlay: View {
 
     private func handleFABTap() {
         errorMessage = nil
+
         if voice.state == .listening {
-            let text = voice.transcript
+            // Pauses the mic only — items stay pending in the card so the
+            // user can still review/confirm. SiriSessionState.end() (which
+            // clears items) is reserved for an explicit confirm/cancel.
             voice.stopListening()
-            parseAndAppend(text)
             return
         }
 
@@ -166,6 +175,12 @@ struct StockSessionOverlay: View {
                     }
                 }
 
+                if voice.state == .listening {
+                    Text("Item ditambahkan. Sebutkan item berikutnya, atau ucapkan selesai.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Button(action: confirmAndSave) {
                     Text("Tambahkan \(items.count) Item ke Stok")
                         .frame(maxWidth: .infinity)
@@ -208,17 +223,28 @@ struct StockSessionOverlay: View {
 
     // MARK: - Actions
 
-    private func parseAndAppend(_ text: String) {
+    /// Called once per pause-detected segment from VoiceStockService.onSegment.
+    /// First checks whether the segment is a free-form done-signal ("selesai",
+    /// "okay done", "udah segitu aja", ...) via the LLM rather than a fixed
+    /// word list, mirroring Siri's own "any more items?" gate; otherwise
+    /// treats it as another item to parse and add to the session.
+    private func handleSegment(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        let sessionSource: SiriSessionState.Source = SiriSessionState.source
 
         isParsing = true
         Task {
             defer { isParsing = false }
             do {
+                if try await llm.isDoneIntent(trimmed) {
+                    voice.stopListening()
+                    return
+                }
                 let entry = try await llm.parseStockPhrase(trimmed)
                 let dto = PendingStockItemDTO(itemName: entry.itemName, quantity: entry.quantity, unit: entry.unit)
-                SiriSessionState.append(dto, source: .manual)
+                SiriSessionState.append(dto, source: sessionSource)
                 refreshFromSharedState()
             } catch {
                 errorMessage = "Tidak bisa memahami: \"\(trimmed)\""
@@ -241,8 +267,23 @@ struct StockSessionOverlay: View {
     private func refreshFromSharedState() {
         items = SiriSessionState.items
         isSessionActive = SiriSessionState.isActive
-        if isSessionActive && SiriSessionState.source == .siri {
-            withAnimation { isCardExpanded = true }
+
+        guard isSessionActive else {
+            hasAutoStartedForSession = false
+            return
+        }
+
+        guard SiriSessionState.source == .siri else { return }
+
+        withAnimation { isCardExpanded = true }
+
+        guard !hasAutoStartedForSession, voice.state != .listening else { return }
+        hasAutoStartedForSession = true
+        errorMessage = nil
+        do {
+            try voice.startListening()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
