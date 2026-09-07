@@ -42,6 +42,11 @@ enum StockPhraseParser {
         "pak": "pak", "pack": "pak", "paknya": "pak"
     ]
 
+    /// Canonical unit values (the alias map's output side), for UI that
+    /// needs a fixed picker list rather than free-form text — e.g.
+    /// InventoryScreen's add/edit form — instead of duplicating this set.
+    static let canonicalUnits: [String] = Array(Set(unitAliases.values)).sorted()
+
     static func parse(_ text: String) -> Parsed {
         let tokenizer = NLTokenizer(unit: .word)
         tokenizer.string = text

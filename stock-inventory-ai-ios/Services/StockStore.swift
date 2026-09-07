@@ -73,6 +73,30 @@ enum StockStore {
         try? context.save()
         return results
     }
+
+    static func update(id: UUID, itemName: String, quantity: Int, unit: String) {
+        let request = StockEntryEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        request.fetchLimit = 1
+
+        guard let entity = try? context.fetch(request).first else { return }
+        entity.itemName = itemName
+        entity.quantity = Int32(quantity)
+        entity.unit = unit
+
+        try? context.save()
+    }
+
+    static func delete(id: UUID) {
+        let request = StockEntryEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        request.fetchLimit = 1
+
+        guard let entity = try? context.fetch(request).first else { return }
+        context.delete(entity)
+
+        try? context.save()
+    }
 }
 
 private extension StockEntryEntity {
