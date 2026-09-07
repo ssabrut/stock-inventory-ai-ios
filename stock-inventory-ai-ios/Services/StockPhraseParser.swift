@@ -47,6 +47,17 @@ enum StockPhraseParser {
     /// InventoryScreen's add/edit form — instead of duplicating this set.
     static let canonicalUnits: [String] = Array(Set(unitAliases.values)).sorted()
 
+    /// Maps a standalone unit token (already split from its quantity, e.g.
+    /// chat's LLM-supplied "gr" or "kilo") to its canonical spelling, or
+    /// returns it unchanged if it's not a known alias. Callers that already
+    /// have an isolated unit string use this instead of `parse`, which
+    /// expects a full quantity+unit phrase — without it, chat's add_stock
+    /// merges by whatever raw unit string the LLM happened to emit, so
+    /// "500 gr" and "500 gram" land as separate entries instead of merging.
+    static func canonicalUnit(_ unit: String) -> String {
+        unitAliases[unit.lowercased()] ?? unit
+    }
+
     static func parse(_ text: String) -> Parsed {
         let tokenizer = NLTokenizer(unit: .word)
         tokenizer.string = text

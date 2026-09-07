@@ -68,7 +68,11 @@ struct AddStockTool: AgentTool {
     func confirmationSummary(arguments: [String: Any]) -> String {
         let itemName = arguments["itemName"] as? String ?? "item"
         let quantity = doubleArgument(arguments, "quantity") ?? 0
-        let unit = arguments["unit"] as? String ?? ""
+        // The LLM emits whatever unit spelling it picked up from the
+        // utterance (e.g. "gr" instead of "gram") — canonicalize before
+        // matching/merging so it lines up with however this item is already
+        // stored, the same vocabulary the voice flow's StockPhraseParser uses.
+        let unit = StockPhraseParser.canonicalUnit(arguments["unit"] as? String ?? "")
 
         if let existing = StockStore.existingEntry(itemName: itemName, unit: unit) {
             return "\(existing.itemName) currently has \(formatQuantity(existing.quantity)) \(existing.unit). Add \(formatQuantity(quantity)) \(unit)?"
@@ -83,9 +87,10 @@ struct AddStockTool: AgentTool {
         guard let quantity = doubleArgument(arguments, "quantity"), quantity > 0 else {
             throw AgentToolError(message: "Missing or invalid quantity.")
         }
-        guard let unit = arguments["unit"] as? String, !unit.isEmpty else {
+        guard let rawUnit = arguments["unit"] as? String, !rawUnit.isEmpty else {
             throw AgentToolError(message: "Missing unit.")
         }
+        let unit = StockPhraseParser.canonicalUnit(rawUnit)
 
         // Chat doesn't ask the model for a price (see AddStockTool's doc
         // comment on why), so fall back to whatever this item last cost.

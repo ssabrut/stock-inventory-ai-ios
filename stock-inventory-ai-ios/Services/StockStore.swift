@@ -95,20 +95,63 @@ enum StockStore {
         }
     }
 
-    /// Finds an existing entry to merge into: same item name (exact,
-    /// case-insensitive — matching update/delete's primary lookup) and a
-    /// unit compatible for merging (see `mergeUnit`).
+    /// Finds an existing entry to merge into: same item name — exact
+    /// case-insensitive match preferred, falling back to a fuzzy match (see
+    /// `fuzzyNameMatches`) so e.g. chat's LLM-transcribed "ayem" still finds
+    /// "Ayam" — and a unit compatible for merging (see `mergeUnit`).
     private static func mergeCandidate(itemName: String, unit: String) -> StockEntryEntity? {
         context.performAndWait {
             let request = StockEntryEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "itemName ==[c] %@", itemName)
+            guard let allEntries = try? context.fetch(request) else { return nil }
 
-            guard let matches = try? context.fetch(request) else { return nil }
-            return matches.first { entry in
+            func unitCompatible(_ entry: StockEntryEntity) -> Bool {
                 guard let existingUnit = entry.unit else { return false }
                 return mergeUnit(existingUnit, unit) != nil
             }
+
+            if let exact = allEntries.first(where: { $0.itemName?.caseInsensitiveCompare(itemName) == .orderedSame && unitCompatible($0) }) {
+                return exact
+            }
+            return allEntries
+                .filter(unitCompatible)
+                .compactMap { entry -> (StockEntryEntity, Int)? in
+                    guard let existingName = entry.itemName, fuzzyNameMatches(existingName, itemName) else { return nil }
+                    return (entry, levenshteinDistance(existingName.lowercased(), itemName.lowercased()))
+                }
+                .min { $0.1 < $1.1 }?.0
         }
+    }
+
+    /// Whether two item names are close enough to treat as the same item —
+    /// used so a slightly mistyped/mistranscribed name (e.g. "ayem" for
+    /// "Ayam") still merges instead of silently creating a duplicate entry.
+    /// Tolerance scales with name length so short names still require a
+    /// near-exact match.
+    private static func fuzzyNameMatches(_ a: String, _ b: String) -> Bool {
+        let a = a.lowercased(), b = b.lowercased()
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        let maxDistance = max(1, min(a.count, b.count) / 4)
+        return levenshteinDistance(a, b) <= maxDistance
+    }
+
+    private static func levenshteinDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        var previous = Array(0...b.count)
+        var current = [Int](repeating: 0, count: b.count + 1)
+
+        for i in 1...Swift.max(a.count, 1) where a.count > 0 {
+            current[0] = i
+            for j in 1...Swift.max(b.count, 1) where b.count > 0 {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                current[j] = Swift.min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + cost
+                )
+            }
+            previous = current
+        }
+        return b.isEmpty ? a.count : previous[b.count]
     }
 
     /// Read-only lookup for callers that need to preview a merge before it
