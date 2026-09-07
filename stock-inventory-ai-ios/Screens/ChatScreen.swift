@@ -18,6 +18,7 @@ struct ChatScreen: View {
         ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu soal stok hari ini?")
     ]
     @State private var draft: String = ""
+    @State private var pendingConfirmation: (call: ToolCall, summary: String, originalPrompt: String)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -74,6 +75,24 @@ struct ChatScreen: View {
                 .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert(
+            "Konfirmasi",
+            isPresented: Binding(
+                get: { pendingConfirmation != nil },
+                set: { if !$0 { pendingConfirmation = nil } }
+            ),
+            presenting: pendingConfirmation
+        ) { pending in
+            Button("Batal", role: .cancel) {
+                messages.append(ChatMessage(isUser: false, text: "Oke, dibatalkan."))
+                pendingConfirmation = nil
+            }
+            Button("Konfirmasi") {
+                confirm(pending)
+            }
+        } message: { pending in
+            Text(pending.summary)
+        }
     }
 
     @ViewBuilder
@@ -103,7 +122,24 @@ struct ChatScreen: View {
 
         Task {
             do {
-                let reply = try await llm.agenticReply(to: text)
+                switch try await llm.agenticReply(to: text) {
+                case .answer(let reply):
+                    messages.append(ChatMessage(isUser: false, text: reply))
+                case .needsConfirmation(let call, let summary):
+                    pendingConfirmation = (call: call, summary: summary, originalPrompt: text)
+                }
+            } catch {
+                messages.append(ChatMessage(isUser: false, text: "Maaf, terjadi kesalahan: \(error.localizedDescription)"))
+            }
+        }
+    }
+
+    private func confirm(_ pending: (call: ToolCall, summary: String, originalPrompt: String)) {
+        pendingConfirmation = nil
+
+        Task {
+            do {
+                let reply = try await llm.resolveConfirmedToolCall(pending.call, originalPrompt: pending.originalPrompt)
                 messages.append(ChatMessage(isUser: false, text: reply))
             } catch {
                 messages.append(ChatMessage(isUser: false, text: "Maaf, terjadi kesalahan: \(error.localizedDescription)"))

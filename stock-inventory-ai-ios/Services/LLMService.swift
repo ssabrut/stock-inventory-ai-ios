@@ -77,6 +77,25 @@ final class LLMService {
         }
     }
 
+    /// Result of a Tanya AI chat turn. `.needsConfirmation` is returned
+    /// instead of running a mutating tool outright — this is a human-
+    /// centered AI project, so Tanya never writes a stock change without
+    /// the user explicitly approving it first. The caller (ChatScreen) shows
+    /// `summary` to the user and, on approval, passes `call` back into
+    /// `resolveConfirmedToolCall`.
+    enum AgentResponse {
+        case answer(String)
+        case needsConfirmation(call: ToolCall, summary: String)
+    }
+
+    private var systemPrompt: String {
+        """
+        Kamu adalah asisten AI untuk aplikasi manajemen stok inventori. Jawab singkat, jelas, dan dalam Bahasa Indonesia.
+
+        \(toolRegistry.systemPromptFragment)
+        """
+    }
+
     /// Tanya AI's chat entry point: lets the model call one of ToolRegistry's
     /// stock tools when it needs live inventory data instead of always
     /// injecting the full stock list as context (the old `reply(to:
@@ -84,13 +103,11 @@ final class LLMService {
     /// on-device model is reliable enough to pick and use a single tool, but
     /// chaining several compounds the chance of it hallucinating a bad call
     /// or looping, so after one tool result it must produce a final answer.
-    func agenticReply(to prompt: String) async throws -> String {
-        let systemPrompt = """
-        Kamu adalah asisten AI untuk aplikasi manajemen stok inventori. Jawab singkat, jelas, dan dalam Bahasa Indonesia.
-
-        \(toolRegistry.systemPromptFragment)
-        """
-
+    ///
+    /// Read-only tools (e.g. get_stock) run immediately since they have no
+    /// side effect to confirm. Mutating tools stop short of `.execute` and
+    /// return `.needsConfirmation` instead.
+    func agenticReply(to prompt: String) async throws -> AgentResponse {
         let firstRaw = try await generate(
             chat: [.system(systemPrompt), .user(prompt)],
             temperature: 0.6
@@ -98,32 +115,63 @@ final class LLMService {
 
         switch toolRegistry.parseReply(firstRaw) {
         case .answer(let text):
-            return text
+            return .answer(text)
 
         case .toolCall(let call):
-            let toolResult = toolRegistry.execute(call)
-
-            let finalPrompt = """
-            Tool "\(call.name)" returned:
-            \(toolResult)
-
-            Reply with ONLY {"answer": "<your reply to the user in Bahasa Indonesia, using the tool result above>"}
-            """
-
-            let finalRaw = try await generate(
-                chat: [.system(systemPrompt), .user(prompt), .assistant(firstRaw), .user(finalPrompt)],
-                temperature: 0.6
-            )
-
-            switch toolRegistry.parseReply(finalRaw) {
-            case .answer(let text):
-                return text
-            case .toolCall:
-                // Model tried to chain a second tool call past the one-round
-                // cap; fall back to its raw text rather than executing it.
-                return finalRaw
+            guard let tool = toolRegistry.tool(named: call.name) else {
+                return .answer(toolRegistry.execute(call))
             }
+
+            if tool.isMutating {
+                return .needsConfirmation(call: call, summary: tool.confirmationSummary(arguments: call.arguments))
+            }
+
+            return .answer(try await finalAnswer(prompt: prompt, firstRaw: firstRaw, call: call))
         }
+    }
+
+    /// Runs a mutating tool call the user has just approved via the
+    /// `.needsConfirmation` prompt, then asks the model to phrase the result
+    /// as a final reply. There is no re-parsing of a fresh model turn for
+    /// tool selection here — the call itself already came from the model
+    /// and was only gated on user approval, not re-decided.
+    func resolveConfirmedToolCall(_ call: ToolCall, originalPrompt: String) async throws -> String {
+        let rawCallJSON = "{\"tool\": \"\(call.name)\", \"args\": \(jsonString(from: call.arguments))}"
+        return try await finalAnswer(prompt: originalPrompt, firstRaw: rawCallJSON, call: call)
+    }
+
+    private func finalAnswer(prompt: String, firstRaw: String, call: ToolCall) async throws -> String {
+        let toolResult = toolRegistry.execute(call)
+
+        let finalPrompt = """
+        Tool "\(call.name)" returned:
+        \(toolResult)
+
+        Reply with ONLY {"answer": "<your reply to the user in Bahasa Indonesia, using the tool result above>"}
+        """
+
+        let finalRaw = try await generate(
+            chat: [.system(systemPrompt), .user(prompt), .assistant(firstRaw), .user(finalPrompt)],
+            temperature: 0.6
+        )
+
+        switch toolRegistry.parseReply(finalRaw) {
+        case .answer(let text):
+            return text
+        case .toolCall:
+            // Model tried to chain a second tool call past the one-round
+            // cap; fall back to its raw text rather than executing it.
+            return finalRaw
+        }
+    }
+
+    private func jsonString(from arguments: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: arguments),
+              let string = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+        return string
     }
 
     private func generate(chat: [Chat.Message], temperature: Float) async throws -> String {

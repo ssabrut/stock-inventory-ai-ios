@@ -47,6 +47,14 @@ struct AddStockTool: AgentTool {
         AgentToolParameter(name: "quantity", type: "integer", description: "Amount to add"),
         AgentToolParameter(name: "unit", type: "string", description: "Unit of measure, e.g. gram, kg, pcs")
     ]
+    let isMutating = true
+
+    func confirmationSummary(arguments: [String: Any]) -> String {
+        let itemName = arguments["itemName"] as? String ?? "item"
+        let quantity = arguments["quantity"] as? Int ?? 0
+        let unit = arguments["unit"] as? String ?? ""
+        return "Add \(quantity) \(unit) of \(itemName) to inventory?"
+    }
 
     func call(arguments: [String: Any]) throws -> String {
         guard let itemName = arguments["itemName"] as? String, !itemName.isEmpty else {
@@ -76,6 +84,23 @@ struct UpdateStockTool: AgentTool {
         AgentToolParameter(name: "quantity", type: "integer", description: "New quantity", isRequired: false),
         AgentToolParameter(name: "unit", type: "string", description: "New unit of measure", isRequired: false)
     ]
+    let isMutating = true
+
+    func confirmationSummary(arguments: [String: Any]) -> String {
+        let itemName = arguments["itemName"] as? String ?? "item"
+        var changes: [String] = []
+        if let newItemName = arguments["newItemName"] as? String, !newItemName.isEmpty {
+            changes.append("rename to \(newItemName)")
+        }
+        if let quantity = arguments["quantity"] as? Int {
+            changes.append("quantity to \(quantity)")
+        }
+        if let unit = arguments["unit"] as? String, !unit.isEmpty {
+            changes.append("unit to \(unit)")
+        }
+        let changeText = changes.isEmpty ? "update" : changes.joined(separator: ", ")
+        return "Update \(itemName): \(changeText)?"
+    }
 
     func call(arguments: [String: Any]) throws -> String {
         guard let itemName = arguments["itemName"] as? String, !itemName.isEmpty else {
@@ -104,6 +129,12 @@ struct DeleteStockTool: AgentTool {
     let parameters: [AgentToolParameter] = [
         AgentToolParameter(name: "itemName", type: "string", description: "Name of the item to delete")
     ]
+    let isMutating = true
+
+    func confirmationSummary(arguments: [String: Any]) -> String {
+        let itemName = arguments["itemName"] as? String ?? "item"
+        return "Delete \(itemName) from inventory?"
+    }
 
     func call(arguments: [String: Any]) throws -> String {
         guard let itemName = arguments["itemName"] as? String, !itemName.isEmpty else {

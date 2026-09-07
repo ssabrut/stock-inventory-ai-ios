@@ -42,14 +42,33 @@ protocol AgentTool {
 
     var parameters: [AgentToolParameter] { get }
 
+    /// Whether running this tool changes inventory data. Mutating tools
+    /// require the user to explicitly confirm before `call` runs — this is a
+    /// human-centered AI project, so Tanya AI never writes stock changes
+    /// without the user seeing and approving them first. Read-only tools
+    /// (e.g. get_stock) run immediately with no confirmation step.
+    var isMutating: Bool { get }
+
     /// Runs the tool with the LLM-provided arguments (raw JSON values keyed
     /// by parameter name) and returns a plain-text result to feed back to
     /// the model. Throws `AgentToolError` for user-facing failures (e.g.
     /// "no item named X") the model should relay, not treat as a crash.
     func call(arguments: [String: Any]) throws -> String
+
+    /// Plain-language summary of what this call would do, shown to the user
+    /// in the confirmation prompt before a mutating tool runs, e.g.
+    /// "Add 50 gram of Chicken to inventory?". Only called for mutating
+    /// tools; a default implementation is provided for read-only ones.
+    func confirmationSummary(arguments: [String: Any]) -> String
 }
 
 extension AgentTool {
+    var isMutating: Bool { false }
+
+    func confirmationSummary(arguments: [String: Any]) -> String {
+        "Run \(name)?"
+    }
+
     /// Rendered for the system prompt's tool listing, e.g.:
     /// "- get_stock(itemName: string, optional): Look up quantity of one item."
     var promptDescription: String {
