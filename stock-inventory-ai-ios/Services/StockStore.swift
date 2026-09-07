@@ -66,6 +66,12 @@ enum StockStore {
         }
     }
 
+    /// Read-only lookup for callers that need to preview a merge before it
+    /// happens (e.g. chat's add_stock confirmation showing current stock).
+    static func existingEntry(itemName: String, unit: String) -> StockEntry? {
+        mergeCandidate(itemName: itemName, unit: unit)?.asStockEntry
+    }
+
     /// Returns the base unit both units should be summed in, or nil if they
     /// can't be merged (different families, e.g. "kg" and "pcs").
     private static func mergeUnit(_ a: String, _ b: String) -> String? {

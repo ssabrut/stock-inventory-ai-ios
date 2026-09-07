@@ -69,6 +69,10 @@ struct AddStockTool: AgentTool {
         let itemName = arguments["itemName"] as? String ?? "item"
         let quantity = doubleArgument(arguments, "quantity") ?? 0
         let unit = arguments["unit"] as? String ?? ""
+
+        if let existing = StockStore.existingEntry(itemName: itemName, unit: unit) {
+            return "\(existing.itemName) currently has \(formatQuantity(existing.quantity)) \(existing.unit). Add \(formatQuantity(quantity)) \(unit)?"
+        }
         return "Add \(formatQuantity(quantity)) \(unit) of \(itemName) to inventory?"
     }
 
