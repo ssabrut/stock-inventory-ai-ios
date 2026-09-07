@@ -87,7 +87,10 @@ struct AddStockTool: AgentTool {
             throw AgentToolError(message: "Missing unit.")
         }
 
-        let entry = StockStore.add(itemName: itemName, quantity: quantity, unit: unit)
+        // Chat doesn't ask the model for a price (see AddStockTool's doc
+        // comment on why), so fall back to whatever this item last cost.
+        let totalCost = StockStore.lastKnownCost(itemName: itemName) * quantity
+        let entry = StockStore.add(itemName: itemName, quantity: quantity, unit: unit, totalCost: totalCost)
         return "Added \(formatQuantity(entry.quantity)) \(entry.unit) of \(entry.itemName)."
     }
 }
@@ -136,7 +139,7 @@ struct UpdateStockTool: AgentTool {
         let newQuantity = doubleArgument(arguments, "quantity") ?? match.quantity
         let newUnit = (arguments["unit"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? match.unit
 
-        StockStore.update(id: match.id, itemName: newItemName, quantity: newQuantity, unit: newUnit, date: match.date)
+        StockStore.update(id: match.id, itemName: newItemName, quantity: newQuantity, unit: newUnit, costPerUnit: match.costPerUnit, date: match.date)
         return "Updated \(match.itemName) to \(formatQuantity(newQuantity)) \(newUnit)\(newItemName != match.itemName ? " (renamed to \(newItemName))" : "")."
     }
 }

@@ -25,6 +25,7 @@ struct StockToolsTests {
         for entry in StockStore.all() {
             StockStore.delete(id: entry.id)
         }
+        StockStore.deleteAllTransactions()
     }
 
     // MARK: - GetStockTool
@@ -92,6 +93,128 @@ struct StockToolsTests {
             try AddStockTool().call(arguments: ["itemName": "Chicken", "quantity": 50])
         }
         #expect(StockStore.all().isEmpty)
+    }
+
+    @Test func addStock_noKnownCost_addsAtZeroCost() throws {
+        _ = try AddStockTool().call(arguments: ["itemName": "Chicken", "quantity": 50, "unit": "gram"])
+        #expect(StockStore.all().first?.costPerUnit == 0)
+    }
+
+    @Test func addStock_itemHasKnownCost_fallsBackToLastKnownCost() throws {
+        // Chat's add_stock has no cost field, so an item that already has a
+        // cost on file (e.g. added via the manual form) should keep costing
+        // the same per unit rather than resetting to 0.
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+
+        _ = try AddStockTool().call(arguments: ["itemName": "Chicken", "quantity": 1, "unit": "kg"])
+
+        // 5kg @ 30,000 + 1kg @ 30,000 (fallback) = 6kg @ 30,000 average.
+        #expect(StockStore.all().first?.costPerUnit == 30_000)
+    }
+
+    // MARK: - StockStore merge-on-add
+
+    @Test func add_sameItemSameUnit_mergesIntoOneEntryAndSumsQuantity() {
+        StockStore.add(itemName: "Chicken", quantity: 2, unit: "kg")
+        StockStore.add(itemName: "Chicken", quantity: 3, unit: "kg")
+
+        let stored = StockStore.all()
+        #expect(stored.count == 1)
+        #expect(stored.first?.quantity == 5)
+        #expect(stored.first?.unit == "kg")
+    }
+
+    @Test func add_compatibleUnits_convertsAndMergesIntoBaseUnit() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg")
+        StockStore.add(itemName: "Chicken", quantity: 500, unit: "gram")
+
+        let stored = StockStore.all().first
+        #expect(stored?.unit == "kg")
+        #expect(stored?.quantity == 5.5)
+    }
+
+    @Test func add_incompatibleUnits_doesNotMergeInsertsSeparateEntry() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg")
+        StockStore.add(itemName: "Chicken", quantity: 3, unit: "pcs")
+
+        #expect(StockStore.all().count == 2)
+    }
+
+    @Test func add_differentItemNames_neverMerge() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg")
+        StockStore.add(itemName: "Rice", quantity: 5, unit: "kg")
+
+        #expect(StockStore.all().count == 2)
+    }
+
+    // MARK: - StockStore cost / weighted average
+
+    @Test func add_withTotalCost_derivesCostPerUnit() {
+        let entry = StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        #expect(entry.costPerUnit == 30_000)
+    }
+
+    @Test func add_mergingWithDifferentCosts_blendsWeightedAverage() {
+        // 5kg @ Rp30,000/kg (150,000 total) + 3kg @ Rp36,000/kg (108,000 total)
+        // -> 8kg @ (150,000 + 108,000) / 8 = Rp32,250/kg
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        StockStore.add(itemName: "Chicken", quantity: 3, unit: "kg", totalCost: 108_000)
+
+        let stored = StockStore.all().first
+        #expect(stored?.quantity == 8)
+        #expect(stored?.costPerUnit == 32_250)
+    }
+
+    @Test func lastKnownCost_returnsMostRecentNonZeroCost() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        #expect(StockStore.lastKnownCost(itemName: "Chicken") == 30_000)
+    }
+
+    @Test func lastKnownCost_noEntry_returnsZero() {
+        #expect(StockStore.lastKnownCost(itemName: "Nonexistent") == 0)
+    }
+
+    // MARK: - StockStore.use / COGS
+
+    @Test func use_validQuantity_decrementsEntryAndLogsRemoveTransaction() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        let id = StockStore.all().first!.id
+
+        let succeeded = StockStore.use(id: id, quantity: 2)
+
+        #expect(succeeded)
+        #expect(StockStore.all().first?.quantity == 3)
+        let removeTransaction = StockStore.allTransactions().first { $0.type == .remove }
+        #expect(removeTransaction?.quantity == 2)
+        #expect(removeTransaction?.costPerUnit == 30_000)
+    }
+
+    @Test func use_quantityExceedsAvailable_failsAndLeavesEntryUnchanged() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        let id = StockStore.all().first!.id
+
+        let succeeded = StockStore.use(id: id, quantity: 10)
+
+        #expect(!succeeded)
+        #expect(StockStore.all().first?.quantity == 5)
+    }
+
+    @Test func use_fullQuantity_removesEntryEntirely() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        let id = StockStore.all().first!.id
+
+        StockStore.use(id: id, quantity: 5)
+
+        #expect(StockStore.all().isEmpty)
+    }
+
+    @Test func cogs_sumsOnlyRemoveTransactions() {
+        StockStore.add(itemName: "Chicken", quantity: 5, unit: "kg", totalCost: 150_000)
+        let id = StockStore.all().first!.id
+        StockStore.use(id: id, quantity: 2)
+
+        // 2kg used at Rp30,000/kg = Rp60,000 COGS; the Rp150,000 add doesn't count.
+        #expect(StockStore.cogs() == 60_000)
     }
 
     // MARK: - UpdateStockTool

@@ -12,14 +12,39 @@ struct StockEntry: Identifiable, Codable {
     let quantity: Double
     let unit: String
     let date: Date
+    /// Weighted-average cost per unit across every "add" that fed this entry.
+    let costPerUnit: Double
 
-    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String, date: Date = .now) {
+    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String, date: Date = .now, costPerUnit: Double = 0) {
         self.id = id
         self.itemName = itemName
         self.quantity = quantity
         self.unit = unit
         self.date = date
+        self.costPerUnit = costPerUnit
     }
+}
+
+/// One add or use/sell event, kept forever (independent of StockEntryEntity,
+/// which only holds the current merged quantity) so History/COGS can look
+/// back at what happened over time.
+struct StockTransaction: Identifiable, Codable {
+    enum Kind: String, Codable {
+        case add
+        case remove
+    }
+
+    let id: UUID
+    let itemName: String
+    let quantity: Double
+    let unit: String
+    let costPerUnit: Double
+    let type: Kind
+    let date: Date
+
+    /// Total cost of this transaction — for a `.remove` this is its
+    /// contribution to COGS.
+    var totalCost: Double { quantity * costPerUnit }
 }
 
 /// Core Data-backed store so both the app UI and the Siri AppIntent (which
@@ -44,25 +69,45 @@ enum StockStore {
         "liter": ("liter", 1), "ml": ("liter", 0.001)
     ]
 
-    static func all() -> [StockEntry] {
-        let request = StockEntryEntity.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
+    /// The cost-per-unit already on file for this item (any unit — unlike
+    /// `existingEntry`, this doesn't require unit compatibility), used to
+    /// default a new entry's cost when the caller doesn't know it, e.g. the
+    /// voice-add flow which doesn't ask for cost. Returns 0 if the item has
+    /// never been added with a known cost.
+    static func lastKnownCost(itemName: String) -> Double {
+        context.performAndWait {
+            let request = StockEntryEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "itemName ==[c] %@ AND costPerUnit > 0", itemName)
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
+            request.fetchLimit = 1
 
-        guard let results = try? context.fetch(request) else { return [] }
-        return results.map { $0.asStockEntry }
+            return (try? context.fetch(request).first?.costPerUnit) ?? 0
+        }
+    }
+
+    static func all() -> [StockEntry] {
+        context.performAndWait {
+            let request = StockEntryEntity.fetchRequest()
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
+
+            guard let results = try? context.fetch(request) else { return [] }
+            return results.map { $0.asStockEntry }
+        }
     }
 
     /// Finds an existing entry to merge into: same item name (exact,
     /// case-insensitive — matching update/delete's primary lookup) and a
     /// unit compatible for merging (see `mergeUnit`).
     private static func mergeCandidate(itemName: String, unit: String) -> StockEntryEntity? {
-        let request = StockEntryEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "itemName ==[c] %@", itemName)
+        context.performAndWait {
+            let request = StockEntryEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "itemName ==[c] %@", itemName)
 
-        guard let matches = try? context.fetch(request) else { return nil }
-        return matches.first { entry in
-            guard let existingUnit = entry.unit else { return false }
-            return mergeUnit(existingUnit, unit) != nil
+            guard let matches = try? context.fetch(request) else { return nil }
+            return matches.first { entry in
+                guard let existingUnit = entry.unit else { return false }
+                return mergeUnit(existingUnit, unit) != nil
+            }
         }
     }
 
@@ -87,32 +132,57 @@ enum StockStore {
 
     /// Adds stock, merging into an existing entry with the same item name and
     /// a compatible unit (converting both into their common base unit) rather
-    /// than always inserting a new row.
+    /// than always inserting a new row. `totalCost` is what this whole batch
+    /// cost (e.g. Rp150,000 for 5kg of chicken) — callers ask for a total
+    /// rather than a per-unit price since that's what a receipt actually
+    /// shows. Internally divided into cost-per-unit, which blends into the
+    /// entry's running weighted-average cost. Logs a `.add` transaction so
+    /// History/COGS has a permanent record.
     @discardableResult
-    static func add(itemName: String, quantity: Double, unit: String, date: Date = .now) -> StockEntry {
-        if let existing = mergeCandidate(itemName: itemName, unit: unit),
-           let existingUnit = existing.unit,
-           let base = mergeUnit(existingUnit, unit) {
-            let combined = amount(existing.quantity, in: existingUnit, asBase: base) + amount(quantity, in: unit, asBase: base)
-            existing.quantity = combined
-            existing.unit = base
-            existing.date = date
+    static func add(itemName: String, quantity: Double, unit: String, totalCost: Double = 0, date: Date = .now) -> StockEntry {
+        context.performAndWait {
+            let costPerUnit = quantity > 0 ? totalCost / quantity : 0
+            logTransaction(itemName: itemName, quantity: quantity, unit: unit, costPerUnit: costPerUnit, type: .add, date: date)
+
+            if let existing = mergeCandidate(itemName: itemName, unit: unit),
+               let existingUnit = existing.unit,
+               let base = mergeUnit(existingUnit, unit) {
+                let existingBaseQty = amount(existing.quantity, in: existingUnit, asBase: base)
+                let addedBaseQty = amount(quantity, in: unit, asBase: base)
+                let combined = existingBaseQty + addedBaseQty
+
+                // Weighted-average cost, converted into cost-per-base-unit so
+                // blending stays correct across a unit conversion (e.g. existing
+                // "5 kg @ Rp30k/kg" + new "500 gram @ Rp32/gram" both normalize
+                // to cost-per-kg before averaging).
+                let existingCostPerBase = costPerBase(existing.costPerUnit, unit: existingUnit, base: base)
+                let addedCostPerBase = costPerBase(costPerUnit, unit: unit, base: base)
+                let blendedCost = combined > 0
+                    ? (existingBaseQty * existingCostPerBase + addedBaseQty * addedCostPerBase) / combined
+                    : 0
+
+                existing.quantity = combined
+                existing.unit = base
+                existing.costPerUnit = blendedCost
+                existing.date = date
+
+                try? context.save()
+                return existing.asStockEntry
+            }
+
+            let entry = StockEntry(itemName: itemName, quantity: quantity, unit: unit, date: date, costPerUnit: costPerUnit)
+
+            let entity = StockEntryEntity(context: context)
+            entity.id = entry.id
+            entity.itemName = entry.itemName
+            entity.quantity = entry.quantity
+            entity.unit = entry.unit
+            entity.date = entry.date
+            entity.costPerUnit = entry.costPerUnit
 
             try? context.save()
-            return existing.asStockEntry
+            return entry
         }
-
-        let entry = StockEntry(itemName: itemName, quantity: quantity, unit: unit, date: date)
-
-        let entity = StockEntryEntity(context: context)
-        entity.id = entry.id
-        entity.itemName = entry.itemName
-        entity.quantity = entry.quantity
-        entity.unit = entry.unit
-        entity.date = entry.date
-
-        try? context.save()
-        return entry
     }
 
     /// Writes several entries in one Core Data save, used by AddStockIntent
@@ -120,36 +190,137 @@ enum StockStore {
     /// Each item merges with an existing entry the same way the single-item
     /// `add` does, so a Siri session adding "ayam" twice doesn't duplicate it.
     @discardableResult
-    static func add(_ entries: [(itemName: String, quantity: Double, unit: String)]) -> [StockEntry] {
+    static func add(_ entries: [(itemName: String, quantity: Double, unit: String, totalCost: Double)]) -> [StockEntry] {
         let results = entries.map { item in
-            add(itemName: item.itemName, quantity: item.quantity, unit: item.unit)
+            add(itemName: item.itemName, quantity: item.quantity, unit: item.unit, totalCost: item.totalCost)
         }
         return results
     }
 
-    static func update(id: UUID, itemName: String, quantity: Double, unit: String, date: Date) {
-        let request = StockEntryEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
-        request.fetchLimit = 1
+    /// Converts a cost-per-`unit` figure into cost-per-`base`-unit (e.g. Rp
+    /// per gram -> Rp per kg is `costPerUnit / 0.001`, since 1 base unit
+    /// equals `toBase` of `unit`).
+    private static func costPerBase(_ costPerUnit: Double, unit: String, base: String) -> Double {
+        guard let conversion = unitConversion[unit], conversion.base == base, conversion.toBase != 0 else { return costPerUnit }
+        return costPerUnit / conversion.toBase
+    }
 
-        guard let entity = try? context.fetch(request).first else { return }
-        entity.itemName = itemName
-        entity.quantity = quantity
-        entity.unit = unit
-        entity.date = date
+    /// Corrects an existing entry directly, including a raw override of its
+    /// costPerUnit — unlike `add`, this doesn't log a transaction or blend
+    /// into a weighted average, since it's a data-entry fix, not a purchase.
+    static func update(id: UUID, itemName: String, quantity: Double, unit: String, costPerUnit: Double, date: Date) {
+        context.performAndWait {
+            let request = StockEntryEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            request.fetchLimit = 1
 
-        try? context.save()
+            guard let entity = try? context.fetch(request).first else { return }
+            entity.itemName = itemName
+            entity.quantity = quantity
+            entity.unit = unit
+            entity.costPerUnit = costPerUnit
+            entity.date = date
+
+            try? context.save()
+        }
     }
 
     static func delete(id: UUID) {
-        let request = StockEntryEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
-        request.fetchLimit = 1
+        context.performAndWait {
+            let request = StockEntryEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            request.fetchLimit = 1
 
-        guard let entity = try? context.fetch(request).first else { return }
-        context.delete(entity)
+            guard let entity = try? context.fetch(request).first else { return }
+            context.delete(entity)
+
+            try? context.save()
+        }
+    }
+
+    /// Records stock going out (used/sold), charged at the entry's current
+    /// weighted-average cost — this is what feeds COGS. Distinct from
+    /// `delete`, which is a data correction and logs no transaction. Returns
+    /// false (no-op) if `quantity` exceeds what's on hand.
+    @discardableResult
+    static func use(id: UUID, quantity: Double, date: Date = .now) -> Bool {
+        context.performAndWait {
+            let request = StockEntryEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            request.fetchLimit = 1
+
+            guard let entity = try? context.fetch(request).first,
+                  quantity > 0, quantity <= entity.quantity,
+                  let itemName = entity.itemName, let unit = entity.unit
+            else { return false }
+
+            logTransaction(itemName: itemName, quantity: quantity, unit: unit, costPerUnit: entity.costPerUnit, type: .remove, date: date)
+
+            entity.quantity -= quantity
+            if entity.quantity <= 0 {
+                context.delete(entity)
+            }
+
+            try? context.save()
+            return true
+        }
+    }
+
+    /// Callers must already be running inside `context.performAndWait`.
+    @discardableResult
+    private static func logTransaction(itemName: String, quantity: Double, unit: String, costPerUnit: Double, type: StockTransaction.Kind, date: Date) -> StockTransaction {
+        let transaction = StockTransaction(id: UUID(), itemName: itemName, quantity: quantity, unit: unit, costPerUnit: costPerUnit, type: type, date: date)
+
+        let entity = StockTransactionEntity(context: context)
+        entity.id = transaction.id
+        entity.itemName = transaction.itemName
+        entity.quantity = transaction.quantity
+        entity.unit = transaction.unit
+        entity.costPerUnit = transaction.costPerUnit
+        entity.type = transaction.type.rawValue
+        entity.date = transaction.date
 
         try? context.save()
+        return transaction
+    }
+
+    /// All transactions (add + remove), most recent first — the History
+    /// screen's data source.
+    static func allTransactions() -> [StockTransaction] {
+        context.performAndWait {
+            let request = StockTransactionEntity.fetchRequest()
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \StockTransactionEntity.date, ascending: false)]
+
+            guard let results = try? context.fetch(request) else { return [] }
+            return results.compactMap { $0.asStockTransaction }
+        }
+    }
+
+    /// Wipes the transaction log — used by tests to reset the in-memory store
+    /// between cases (StockStore.all()/delete only clears StockEntryEntity,
+    /// leaving transactions to accumulate across every add() call).
+    static func deleteAllTransactions() {
+        context.performAndWait {
+            let request = StockTransactionEntity.fetchRequest()
+            guard let results = try? context.fetch(request) else { return }
+            for entity in results {
+                context.delete(entity)
+            }
+            try? context.save()
+        }
+    }
+
+    /// Total cost of goods sold (sum of every `.remove` transaction's
+    /// quantity * costPerUnit) within an optional date range.
+    static func cogs(from startDate: Date? = nil, to endDate: Date? = nil) -> Double {
+        allTransactions()
+            .filter { transaction in
+                guard transaction.type == .remove else { return false }
+                if let startDate, transaction.date < startDate { return false }
+                if let endDate, transaction.date > endDate { return false }
+                return true
+            }
+            .reduce(0) { $0 + $1.totalCost }
     }
 }
 
@@ -160,6 +331,22 @@ private extension StockEntryEntity {
             itemName: itemName ?? "",
             quantity: quantity,
             unit: unit ?? "",
+            date: date ?? .now,
+            costPerUnit: costPerUnit
+        )
+    }
+}
+
+private extension StockTransactionEntity {
+    var asStockTransaction: StockTransaction? {
+        guard let id, let itemName, let unit, let type = type.flatMap(StockTransaction.Kind.init) else { return nil }
+        return StockTransaction(
+            id: id,
+            itemName: itemName,
+            quantity: quantity,
+            unit: unit,
+            costPerUnit: costPerUnit,
+            type: type,
             date: date ?? .now
         )
     }

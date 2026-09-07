@@ -12,12 +12,16 @@ struct PendingStockItemDTO: Codable, Identifiable, Equatable {
     let itemName: String
     let quantity: Double
     let unit: String
+    /// Total cost for this whole quantity, asked right after the item is
+    /// confirmed (see StockSessionOverlay's .askingCost phase) — 0 until set.
+    var totalCost: Double
 
-    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String) {
+    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String, totalCost: Double = 0) {
         self.id = id
         self.itemName = itemName
         self.quantity = quantity
         self.unit = unit
+        self.totalCost = totalCost
     }
 }
 

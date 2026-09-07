@@ -3,6 +3,7 @@
 //  stock-inventory-ai-ios
 //
 
+import NaturalLanguage
 import SwiftUI
 
 /// Floating bottom-right mic FAB + expandable session card, mounted once
@@ -31,7 +32,10 @@ struct StockSessionOverlay: View {
         case confirmingItem(PendingStockItemDTO)
         /// The item was rejected; next segment replaces it entirely.
         case awaitingCorrection
-        /// The item was confirmed; next segment is classified as continue/stop.
+        /// The item was confirmed; next segment is parsed as its total cost
+        /// (required — see StockStore.add's totalCost).
+        case askingCost(PendingStockItemDTO)
+        /// Cost was captured; next segment is classified as continue/stop.
         case askingContinue
         /// No more items; review list is ready for the final save.
         case finalSummary
@@ -196,7 +200,7 @@ struct StockSessionOverlay: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(items) { item in
                         HStack {
-                            Text("• \(formatQuantity(item.quantity)) \(item.unit) \(item.itemName)")
+                            Text("• \(formatQuantity(item.quantity)) \(item.unit) \(item.itemName)\(item.totalCost > 0 ? " — \(formatQuantity(item.totalCost))" : "")")
                                 .font(.subheadline)
                             Spacer()
                             if phase == .finalSummary {
@@ -250,6 +254,9 @@ struct StockSessionOverlay: View {
         case .awaitingCorrection:
             Text("Say the correct item.")
                 .font(.subheadline)
+        case .askingCost:
+            Text("What's the total cost for that?")
+                .font(.subheadline)
         case .askingContinue:
             Text("Want to add another item?")
                 .font(.subheadline)
@@ -299,6 +306,8 @@ struct StockSessionOverlay: View {
             handleConfirmReply(trimmed, entry: entry)
         case .awaitingCorrection:
             handleItemUtterance(trimmed, checkForDoneSignal: false)
+        case .askingCost(let entry):
+            handleCostReply(trimmed, entry: entry)
         case .askingContinue:
             handleContinueReply(trimmed)
         case .finalSummary:
@@ -331,8 +340,9 @@ struct StockSessionOverlay: View {
         }
     }
 
-    /// Classifies the reply to "is that right?" — on yes, commits the item to
-    /// the shared session and moves to .askingContinue; on no, discards the
+    /// Classifies the reply to "is that right?" — on yes, moves to
+    /// .askingCost (the item isn't committed to the shared session until its
+    /// cost is captured, since totalCost is required); on no, discards the
     /// pending item and moves to .awaitingCorrection so the next segment
     /// replaces it entirely.
     private func handleConfirmReply(_ text: String, entry: PendingStockItemDTO) {
@@ -342,9 +352,7 @@ struct StockSessionOverlay: View {
             do {
                 let isCorrect = try await llm.classifyYesNo(reply: text, question: "Is this item correct: \(formatQuantity(entry.quantity)) \(entry.unit) \(entry.itemName)?")
                 if isCorrect {
-                    SiriSessionState.append(entry, source: SiriSessionState.source)
-                    refreshFromSharedState()
-                    phase = .askingContinue
+                    phase = .askingCost(entry)
                 } else {
                     phase = .awaitingCorrection
                 }
@@ -352,6 +360,56 @@ struct StockSessionOverlay: View {
                 errorMessage = "Couldn't understand the reply, try again."
             }
         }
+    }
+
+    /// Parses the reply to "what's the total cost?" as a plain number (no LLM
+    /// round-trip needed for a bare figure) and commits the item — with cost
+    /// attached — to the shared session, then moves to .askingContinue. A
+    /// reply with no parseable number re-prompts instead of silently
+    /// defaulting to 0, since cost is required.
+    private func handleCostReply(_ text: String, entry: PendingStockItemDTO) {
+        guard let totalCost = Self.firstNumber(in: text), totalCost > 0 else {
+            errorMessage = "Didn't catch a price — say the total cost, e.g. \"150 thousand\" or \"150000\"."
+            return
+        }
+
+        var confirmed = entry
+        confirmed.totalCost = totalCost
+        SiriSessionState.append(confirmed, source: SiriSessionState.source)
+        refreshFromSharedState()
+        phase = .askingContinue
+    }
+
+    /// Extracts the first number in `text` as a Double, applying a trailing
+    /// "ribu"/"juta" multiplier when present — covers how people actually say
+    /// prices ("150 ribu" -> 150,000; "1.5 juta" -> 1,500,000) without a full
+    /// spoken-number NLU pass (a bare "seratus lima puluh ribu" with no
+    /// digits at all still won't parse — same scoped-down tradeoff as
+    /// StockPhraseParser's own number scan).
+    private static let costMultiplierAliases: [String: Double] = [
+        "ribu": 1_000, "rb": 1_000,
+        "juta": 1_000_000, "jt": 1_000_000
+    ]
+
+    private static func firstNumber(in text: String) -> Double? {
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = text
+
+        var tokens: [String] = []
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            tokens.append(String(text[range]))
+            return true
+        }
+
+        guard let numberIndex = tokens.firstIndex(where: { Double($0) != nil }),
+              let number = Double(tokens[numberIndex])
+        else { return nil }
+
+        if tokens.indices.contains(numberIndex + 1),
+           let multiplier = costMultiplierAliases[tokens[numberIndex + 1].lowercased()] {
+            return number * multiplier
+        }
+        return number
     }
 
     /// Classifies the reply to "want to add another item?" — on yes, resumes
@@ -384,7 +442,7 @@ struct StockSessionOverlay: View {
     }
 
     private func confirmAndSave() {
-        StockStore.add(items.map { (itemName: $0.itemName, quantity: $0.quantity, unit: $0.unit) })
+        StockStore.add(items.map { (itemName: $0.itemName, quantity: $0.quantity, unit: $0.unit, totalCost: $0.totalCost) })
         SiriSessionState.end()
         phase = .listeningForItem
         refreshFromSharedState()

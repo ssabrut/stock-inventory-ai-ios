@@ -14,6 +14,7 @@ struct InventoryScreen: View {
 
     @State private var editingEntry: StockEntryEntity?
     @State private var isAddingNew = false
+    @State private var usingEntry: StockEntryEntity?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -55,6 +56,14 @@ struct InventoryScreen: View {
                                     Label("Hapus", systemImage: "trash")
                                 }
                             }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    usingEntry = entry
+                                } label: {
+                                    Label("Pakai", systemImage: "minus.circle")
+                                }
+                                .tint(.orange)
+                            }
                     }
                 }
                 .listStyle(.plain)
@@ -68,11 +77,81 @@ struct InventoryScreen: View {
         .sheet(isPresented: $isAddingNew) {
             StockEntryFormSheet(mode: .create)
         }
+        .sheet(item: $usingEntry) { entry in
+            UseStockSheet(entry: entry)
+        }
     }
 
     private func delete(_ entry: StockEntryEntity) {
         guard let id = entry.id else { return }
         StockStore.delete(id: id)
+    }
+}
+
+/// "Pakai" (use/sell) sheet — records stock going out at its current
+/// weighted-average cost, logging a `.remove` transaction that feeds COGS.
+/// Kept separate from the edit form since this is a usage event, not a data
+/// correction (see StockStore.use vs StockStore.update/delete).
+private struct UseStockSheet: View {
+    let entry: StockEntryEntity
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var quantityText: String = ""
+    @State private var errorMessage: String?
+
+    private var availableQuantity: Double { entry.quantity }
+
+    private var parsedQuantity: Double? {
+        guard let value = Double(quantityText), value > 0 else { return nil }
+        return value
+    }
+
+    private var canSave: Bool {
+        guard let value = parsedQuantity else { return false }
+        return value <= availableQuantity
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Stok saat ini", value: "\(formatQuantity(availableQuantity)) \(entry.unit ?? "")")
+                    TextField("Jumlah terpakai", text: $quantityText)
+                        .keyboardType(.decimalPad)
+                } footer: {
+                    if let value = parsedQuantity, value > availableQuantity {
+                        Text("Jumlah melebihi stok yang tersedia.")
+                            .foregroundStyle(.red)
+                    } else {
+                        Text("Dicatat sebagai stok keluar seharga \(formatQuantity(entry.costPerUnit)) per \(entry.unit ?? "").")
+                    }
+                }
+
+                if let errorMessage {
+                    Text(errorMessage).foregroundStyle(.red)
+                }
+            }
+            .navigationTitle("Pakai \(entry.itemName ?? "")")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Batal") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Simpan") { save() }
+                        .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let id = entry.id, let quantity = parsedQuantity else { return }
+        guard StockStore.use(id: id, quantity: quantity) else {
+            errorMessage = "Gagal menyimpan. Coba lagi."
+            return
+        }
+        dismiss()
     }
 }
 
@@ -117,6 +196,7 @@ private struct StockEntryFormSheet: View {
     @State private var itemName: String = ""
     @State private var quantityText: String = ""
     @State private var unit: String = StockPhraseParser.canonicalUnits.first ?? "pcs"
+    @State private var totalCostText: String = ""
     @State private var date: Date = .now
 
     private var isEditing: Bool {
@@ -124,10 +204,19 @@ private struct StockEntryFormSheet: View {
         return false
     }
 
+    /// Total cost is required when adding new stock (it's what feeds COGS),
+    /// but stays an optional raw override when editing — see `save()`.
     private var canSave: Bool {
-        !itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && Double(quantityText) != nil
-            && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              Double(quantityText) != nil,
+              !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return false }
+
+        if isEditing {
+            return totalCostText.isEmpty || Double(totalCostText) != nil
+        }
+        guard let totalCost = Double(totalCostText) else { return false }
+        return totalCost > 0
     }
 
     var body: some View {
@@ -143,6 +232,15 @@ private struct StockEntryFormSheet: View {
                         }
                     }
                     DatePicker("Tanggal", selection: $date, displayedComponents: .date)
+                }
+
+                Section {
+                    TextField(isEditing ? "Harga per satuan (opsional)" : "Total harga", text: $totalCostText)
+                        .keyboardType(.decimalPad)
+                } footer: {
+                    Text(isEditing
+                        ? "Mengubah nilai ini langsung menimpa rata-rata biaya per satuan, tanpa dicatat sebagai transaksi baru."
+                        : "Total biaya untuk jumlah stok ini, mis. Rp150.000 untuk 5kg. Dipakai untuk menghitung rata-rata biaya dan HPP (COGS).")
                 }
 
                 if case .edit(let entry) = mode {
@@ -185,6 +283,11 @@ private struct StockEntryFormSheet: View {
         if let storedUnit = entry.unit, StockPhraseParser.canonicalUnits.contains(storedUnit) {
             unit = storedUnit
         }
+        // Edit mode shows/overrides per-unit cost directly (not a batch
+        // total — see the field's label/footer above).
+        if entry.costPerUnit > 0 {
+            totalCostText = formatQuantity(entry.costPerUnit)
+        }
         if let storedDate = entry.date {
             date = storedDate
         }
@@ -194,13 +297,17 @@ private struct StockEntryFormSheet: View {
         guard let quantity = Double(quantityText) else { return }
         let trimmedName = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let enteredValue = Double(totalCostText) ?? 0
 
         switch mode {
         case .create:
-            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, date: date)
+            // Field holds a batch total here; StockStore.add divides by
+            // quantity internally to get cost-per-unit.
+            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, totalCost: enteredValue, date: date)
         case .edit(let entry):
             guard let id = entry.id else { return }
-            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit, date: date)
+            // Field holds a direct per-unit override here, not a total.
+            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit, costPerUnit: enteredValue, date: date)
         }
     }
 }

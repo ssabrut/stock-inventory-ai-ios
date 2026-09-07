@@ -26,6 +26,8 @@ struct ContentView: View {
                                 InventoryScreen()
                             case .chat:
                                 ChatScreen(llm: llm)
+                            case .history:
+                                HistoryScreen()
                             case .settings:
                                 SettingsScreen(llm: llm)
                             }
