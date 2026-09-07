@@ -123,7 +123,7 @@ private struct UseStockSheet: View {
                         Text("Jumlah melebihi stok yang tersedia.")
                             .foregroundStyle(.red)
                     } else {
-                        Text("Dicatat sebagai stok keluar seharga \(formatQuantity(entry.costPerUnit)) per \(entry.unit ?? "").")
+                        Text("Dicatat sebagai stok keluar seharga \(formatQuantity((parsedQuantity ?? 0) * entry.costPerUnit)).")
                     }
                 }
 
