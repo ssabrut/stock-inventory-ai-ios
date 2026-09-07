@@ -6,30 +6,30 @@
 import SwiftUI
 
 enum AppScreen: String, CaseIterable, Identifiable {
+    case posEditor
     case inventory
     case chat
     case history
-    case posEditor
     case settings
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
+        case .posEditor: return "creditcard.fill"
         case .inventory: return "shippingbox.fill"
         case .chat: return "bubble.left.and.bubble.right.fill"
         case .history: return "chart.line.uptrend.xyaxis"
-        case .posEditor: return "creditcard.fill"
         case .settings: return "gearshape.fill"
         }
     }
 
     var title: String {
         switch self {
+        case .posEditor: return "POS"
         case .inventory: return "Stok Bahan"
         case .chat: return "Tanya AI"
         case .history: return "Riwayat & HPP"
-        case .posEditor: return "POS"
         case .settings: return "Pengaturan"
         }
     }

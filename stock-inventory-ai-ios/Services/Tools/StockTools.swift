@@ -61,9 +61,20 @@ struct AddStockTool: AgentTool {
     let parameters: [AgentToolParameter] = [
         AgentToolParameter(name: "itemName", type: "string", description: "Name of the item"),
         AgentToolParameter(name: "quantity", type: "number", description: "Amount to add"),
-        AgentToolParameter(name: "unit", type: "string", description: "Unit of measure, e.g. gram, kg, pcs")
+        AgentToolParameter(name: "unit", type: "string", description: "Unit of measure, e.g. gram, kg, pcs"),
+        AgentToolParameter(name: "totalCost", type: "number", description: "Total price paid for this quantity. Required if the item has never been added with a known price before.", isRequired: false)
     ]
     let isMutating = true
+
+    /// True when the item has no price to fall back on — neither supplied in
+    /// this call nor on file from a previous add — meaning `call` would have
+    /// to guess. Checked before confirmation is even shown, so the model
+    /// asks the user for a price instead of confirming a silent Rp0 add.
+    func needsPrice(arguments: [String: Any]) -> Bool {
+        guard doubleArgument(arguments, "totalCost") == nil else { return false }
+        let itemName = arguments["itemName"] as? String ?? ""
+        return StockStore.lastKnownCost(itemName: itemName) == 0
+    }
 
     func confirmationSummary(arguments: [String: Any]) -> String {
         let itemName = arguments["itemName"] as? String ?? "item"
@@ -92,9 +103,9 @@ struct AddStockTool: AgentTool {
         }
         let unit = StockPhraseParser.canonicalUnit(rawUnit)
 
-        // Chat doesn't ask the model for a price (see AddStockTool's doc
-        // comment on why), so fall back to whatever this item last cost.
-        let totalCost = StockStore.lastKnownCost(itemName: itemName) * quantity
+        // A supplied price wins; otherwise fall back to whatever this item
+        // last cost (needsPrice already gated the case where neither exists).
+        let totalCost = doubleArgument(arguments, "totalCost") ?? (StockStore.lastKnownCost(itemName: itemName) * quantity)
         let entry = StockStore.add(itemName: itemName, quantity: quantity, unit: unit, totalCost: totalCost)
         return "Added \(formatQuantity(entry.quantity)) \(entry.unit) of \(entry.itemName)."
     }

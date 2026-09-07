@@ -19,6 +19,14 @@ struct ChatScreen: View {
     ]
     @State private var draft: String = ""
     @State private var pendingConfirmation: (call: ToolCall, summary: String, originalPrompt: String)?
+    /// Set when a tool call is missing a price it can't fall back on (see
+    /// `LLMService.AgentResponse.needsPrice`). The next message the user
+    /// sends is read as the price reply instead of a fresh prompt — the
+    /// model has no memory of this pending call, so ChatScreen holds it.
+    /// `originalPrompt` is the message that produced the call (e.g. "tambah
+    /// 5kg beras"), kept alongside so the eventual confirm step can phrase
+    /// its final answer against that instead of the bare price reply.
+    @State private var pendingPriceRequest: (call: ToolCall, originalPrompt: String)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -120,17 +128,35 @@ struct ChatScreen: View {
         messages.append(ChatMessage(isUser: true, text: text))
         draft = ""
 
+        if let pending = pendingPriceRequest {
+            pendingPriceRequest = nil
+            guard let response = llm.resolvePriceReply(text, call: pending.call) else {
+                messages.append(ChatMessage(isUser: false, text: "Maaf, saya tidak menangkap harganya. Coba sebutkan angka totalnya, misal \"20000\"."))
+                pendingPriceRequest = pending
+                return
+            }
+            handle(response, originalPrompt: pending.originalPrompt)
+            return
+        }
+
         Task {
             do {
-                switch try await llm.agenticReply(to: text) {
-                case .answer(let reply):
-                    messages.append(ChatMessage(isUser: false, text: reply))
-                case .needsConfirmation(let call, let summary):
-                    pendingConfirmation = (call: call, summary: summary, originalPrompt: text)
-                }
+                handle(try await llm.agenticReply(to: text), originalPrompt: text)
             } catch {
                 messages.append(ChatMessage(isUser: false, text: "Maaf, terjadi kesalahan: \(error.localizedDescription)"))
             }
+        }
+    }
+
+    private func handle(_ response: LLMService.AgentResponse, originalPrompt: String) {
+        switch response {
+        case .answer(let reply):
+            messages.append(ChatMessage(isUser: false, text: reply))
+        case .needsConfirmation(let call, let summary):
+            pendingConfirmation = (call: call, summary: summary, originalPrompt: originalPrompt)
+        case .needsPrice(let call):
+            pendingPriceRequest = (call: call, originalPrompt: originalPrompt)
+            messages.append(ChatMessage(isUser: false, text: "Berapa harga totalnya?"))
         }
     }
 

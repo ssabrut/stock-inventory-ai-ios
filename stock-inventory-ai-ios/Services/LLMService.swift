@@ -83,9 +83,18 @@ final class LLMService {
     /// the user explicitly approving it first. The caller (ChatScreen) shows
     /// `summary` to the user and, on approval, passes `call` back into
     /// `resolveConfirmedToolCall`.
+    ///
+    /// `.needsPrice` is returned when a tool (e.g. add_stock) is missing a
+    /// price it has no fallback for. The model has no chat memory across
+    /// turns (see `agenticReply`'s doc comment), so the caller can't just
+    /// re-ask the model — it holds `call` itself, reads the next user
+    /// message as a bare price number, and merges it into `call.arguments`
+    /// before resubmitting, the same way `.needsConfirmation` holds a call
+    /// across the confirm step.
     enum AgentResponse {
         case answer(String)
         case needsConfirmation(call: ToolCall, summary: String)
+        case needsPrice(call: ToolCall)
     }
 
     private var systemPrompt: String {
@@ -122,6 +131,10 @@ final class LLMService {
                 return .answer(toolRegistry.execute(call))
             }
 
+            if tool.needsPrice(arguments: call.arguments) {
+                return .needsPrice(call: call)
+            }
+
             if tool.isMutating {
                 return .needsConfirmation(call: call, summary: tool.confirmationSummary(arguments: call.arguments))
             }
@@ -138,6 +151,41 @@ final class LLMService {
     func resolveConfirmedToolCall(_ call: ToolCall, originalPrompt: String) async throws -> String {
         let rawCallJSON = "{\"tool\": \"\(call.name)\", \"args\": \(jsonString(from: call.arguments))}"
         return try await finalAnswer(prompt: originalPrompt, firstRaw: rawCallJSON, call: call)
+    }
+
+    /// Parses `reply` as a bare price number (e.g. "20000", "150 ribu") and
+    /// merges it into `call`'s arguments as the pending tool's price
+    /// parameter, then routes it through the normal confirm step exactly
+    /// like a model-produced call — the caller (ChatScreen) got here from
+    /// `.needsPrice` and is holding `call` across this one extra turn since
+    /// the model itself has no memory of it. Returns nil (instead of
+    /// throwing) when `reply` has no parseable number, so the caller can
+    /// re-prompt rather than crash on a stray chat message.
+    func resolvePriceReply(_ reply: String, call: ToolCall) -> AgentResponse? {
+        guard let price = Self.firstPriceNumber(in: reply) else { return nil }
+        guard let tool = toolRegistry.tool(named: call.name) else { return nil }
+
+        let updatedCall = call.addingArgument(price, forKey: "totalCost")
+        return .needsConfirmation(call: updatedCall, summary: tool.confirmationSummary(arguments: updatedCall.arguments))
+    }
+
+    private static let priceMultiplierAliases: [String: Double] = [
+        "ribu": 1_000, "rb": 1_000,
+        "juta": 1_000_000, "jt": 1_000_000
+    ]
+
+    private static func firstPriceNumber(in text: String) -> Double? {
+        let words = text.lowercased().split(separator: " ").map(String.init)
+
+        guard let numberIndex = words.firstIndex(where: { Double($0) != nil }),
+              let number = Double(words[numberIndex])
+        else { return nil }
+
+        if words.indices.contains(numberIndex + 1),
+           let multiplier = priceMultiplierAliases[words[numberIndex + 1]] {
+            return number * multiplier
+        }
+        return number
     }
 
     private func finalAnswer(prompt: String, firstRaw: String, call: ToolCall) async throws -> String {

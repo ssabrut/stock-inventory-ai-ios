@@ -9,6 +9,16 @@ import Foundation
 struct ToolCall {
     let name: String
     let arguments: [String: Any]
+
+    /// Returns this call with `key` set in its arguments — used to merge a
+    /// price the user supplied in a follow-up chat message (in reply to
+    /// `.needsPrice`) into the original call before resubmitting it, since
+    /// `arguments` is otherwise immutable once the model produced it.
+    func addingArgument(_ value: Any, forKey key: String) -> ToolCall {
+        var merged = arguments
+        merged[key] = value
+        return ToolCall(name: name, arguments: merged)
+    }
 }
 
 /// Holds the tools available to Tanya AI's agent loop and handles the

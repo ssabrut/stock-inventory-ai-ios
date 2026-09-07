@@ -60,6 +60,14 @@ protocol AgentTool {
     /// "Add 50 gram of Chicken to inventory?". Only called for mutating
     /// tools; a default implementation is provided for read-only ones.
     func confirmationSummary(arguments: [String: Any]) -> String
+
+    /// Whether this call is missing information `call` would otherwise have
+    /// to silently guess (e.g. add_stock with no price and no price on
+    /// file). Checked before the confirmation prompt is even shown, so the
+    /// model can ask the user for the missing value instead of confirming a
+    /// call that papers over it. Defaults to false for tools with no such
+    /// case.
+    func needsPrice(arguments: [String: Any]) -> Bool
 }
 
 extension AgentTool {
@@ -68,6 +76,8 @@ extension AgentTool {
     func confirmationSummary(arguments: [String: Any]) -> String {
         "Run \(name)?"
     }
+
+    func needsPrice(arguments: [String: Any]) -> Bool { false }
 
     /// Rendered for the system prompt's tool listing, e.g.:
     /// "- get_stock(itemName: string, optional): Look up quantity of one item."
