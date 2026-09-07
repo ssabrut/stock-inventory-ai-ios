@@ -48,6 +48,15 @@ final class VoiceStockService {
     private var silenceTimer: Timer?
     private var lastObservedTranscript = ""
     private var lastChangeDate = Date()
+    /// Bumped on every startRecognitionTask() and captured by that task's
+    /// completion closure, so a stale callback from a task cutSegment()
+    /// already replaced can tell it's no longer current and ignore its
+    /// error — cancelling a task to rotate segments always raises *some*
+    /// error on the old task (often arriving after the new task's already
+    /// running), and the exact domain/code isn't consistent across iOS
+    /// versions, so a flag reset synchronously by the new task can't be
+    /// trusted to still be in place when the old task's callback lands.
+    private var recognitionGeneration = 0
 
     func requestAuthorization() async -> Bool {
         let speechStatus = await withCheckedContinuation { continuation in
@@ -104,6 +113,7 @@ final class VoiceStockService {
     /// cutSegment() which only rotates the recognition task between items.
     func stopListening() {
         guard state == .listening else { return }
+        recognitionGeneration += 1
         silenceTimer?.invalidate()
         silenceTimer = nil
         audioEngine.stop()
@@ -130,19 +140,21 @@ final class VoiceStockService {
         lastObservedTranscript = ""
         lastChangeDate = Date()
 
+        recognitionGeneration += 1
+        let generation = recognitionGeneration
+
         recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
             if let result {
+                // A callback for a generation we've already moved past (its
+                // task was cancelled by cutSegment() or stopListening())
+                // is stale — ignore even a result, not just an error, so it
+                // can't clobber the new task's in-progress transcript.
+                guard self.recognitionGeneration == generation else { return }
                 self.transcript = result.bestTranscription.formattedString
             }
-            if let error {
-                let nsError = error as NSError
-                // Cancelling the task to rotate segments surfaces as an
-                // error here too; only treat a *real* failure as fatal.
-                guard nsError.domain == "kAFAssistantErrorDomain", nsError.code == 216 else {
-                    self.state = .failed(error.localizedDescription)
-                    return
-                }
+            if error != nil, self.recognitionGeneration == generation {
+                self.state = .failed(error?.localizedDescription ?? "Recognition failed")
             }
         }
     }
