@@ -161,7 +161,7 @@ struct StockSessionOverlay: View {
     private var sessionCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(SiriSessionState.source == .siri ? "Sesi Siri" : "Sesi Suara")
+                Text(SiriSessionState.source == .siri ? "Siri Session" : "Voice Session")
                     .font(.headline)
                 Spacer()
                 Button {
@@ -186,7 +186,7 @@ struct StockSessionOverlay: View {
             if isParsing {
                 HStack(spacing: 6) {
                     ProgressView()
-                    Text("Memproses…").font(.caption).foregroundStyle(.secondary)
+                    Text("Processing…").font(.caption).foregroundStyle(.secondary)
                 }
             }
 
@@ -215,7 +215,7 @@ struct StockSessionOverlay: View {
 
             if phase == .finalSummary {
                 Button(action: confirmAndSave) {
-                    Text(items.isEmpty ? "Tidak Ada Item" : "Tambahkan \(items.count) Item ke Stok")
+                    Text(items.isEmpty ? "No Items" : "Add \(items.count) Item\(items.count == 1 ? "" : "s") to Stock")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -236,25 +236,25 @@ struct StockSessionOverlay: View {
         switch phase {
         case .listeningForItem:
             if items.isEmpty {
-                Text("Belum ada item. Ucapkan item stok, misal \"50 gram ayam\".")
+                Text("No items yet. Say a stock item, e.g. \"50 grams of chicken\".")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Sebutkan item berikutnya, atau ucapkan selesai.")
+                Text("Say the next item, or say done.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         case .confirmingItem(let entry):
-            Text("\(entry.quantity) \(entry.unit) \(entry.itemName) — apa sudah benar?")
+            Text("\(entry.quantity) \(entry.unit) \(entry.itemName) — is that right?")
                 .font(.subheadline)
         case .awaitingCorrection:
-            Text("Ucapkan item yang benar.")
+            Text("Say the correct item.")
                 .font(.subheadline)
         case .askingContinue:
-            Text("Mau tambah item lagi?")
+            Text("Want to add another item?")
                 .font(.subheadline)
         case .finalSummary:
-            Text(items.isEmpty ? "Tidak ada item untuk disimpan." : "Ringkasan item:")
+            Text(items.isEmpty ? "No items to save." : "Item summary:")
                 .font(.subheadline)
         }
     }
@@ -267,7 +267,7 @@ struct StockSessionOverlay: View {
                     .frame(width: 3, height: barHeight(for: i))
             }
             Spacer()
-            Text(voice.transcript.isEmpty ? "Mendengarkan…" : voice.transcript)
+            Text(voice.transcript.isEmpty ? "Listening…" : voice.transcript)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -326,7 +326,7 @@ struct StockSessionOverlay: View {
                 let dto = PendingStockItemDTO(itemName: entry.itemName, quantity: entry.quantity, unit: entry.unit)
                 phase = .confirmingItem(dto)
             } catch {
-                errorMessage = "Tidak bisa memahami: \"\(text)\""
+                errorMessage = "Couldn't understand: \"\(text)\""
             }
         }
     }
@@ -349,7 +349,7 @@ struct StockSessionOverlay: View {
                     phase = .awaitingCorrection
                 }
             } catch {
-                errorMessage = "Tidak bisa memahami jawabannya, coba lagi."
+                errorMessage = "Couldn't understand the reply, try again."
             }
         }
     }
@@ -368,7 +368,7 @@ struct StockSessionOverlay: View {
                     finishListeningToSummary()
                 }
             } catch {
-                errorMessage = "Tidak bisa memahami jawabannya, coba lagi."
+                errorMessage = "Couldn't understand the reply, try again."
             }
         }
     }

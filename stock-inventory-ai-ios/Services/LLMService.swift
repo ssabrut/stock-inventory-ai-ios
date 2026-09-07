@@ -136,10 +136,10 @@ final class LLMService {
         defer { state = .ready }
 
         let systemPrompt = """
-        Kamu mendeteksi apakah ucapan pengguna berarti dia SUDAH SELESAI menambahkan stok \
-        (misal: "selesai", "cukup", "udah segitu aja", "that's all", "okay done"), BUKAN \
-        menyebutkan barang baru. Balas HANYA dengan "yes" jika itu sinyal selesai, atau "no" \
-        jika itu masih menyebutkan item stok (misal "50 gram ayam").
+        You detect whether the user's utterance means they are DONE adding stock \
+        (e.g. "done", "that's all", "okay I'm finished", "no more"), rather than \
+        naming another item. Reply with ONLY "yes" if it's a done-signal, or "no" \
+        if it's still naming a stock item (e.g. "50 grams of chicken").
         """
 
         let chat: [Chat.Message] = [
@@ -234,8 +234,8 @@ final class LLMService {
         defer { state = .ready }
 
         let systemPrompt = """
-        Bersihkan teks ini menjadi nama barang gudang yang rapi. \
-        Balas HANYA dengan nama barangnya, tanpa tanda kutip, tanpa penjelasan lain.
+        Clean up this text into a tidy inventory item name. \
+        Reply with ONLY the item name, no quotes, no other explanation.
         """
 
         let chat: [Chat.Message] = [

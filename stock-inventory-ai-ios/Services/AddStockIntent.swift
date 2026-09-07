@@ -12,8 +12,8 @@ import AppIntents
 /// confirm UX now lives in-app instead of Siri's own conversation loop, so
 /// this intent has no parameters and no dialog of its own.
 struct AddStockIntent: AppIntent {
-    static var title: LocalizedStringResource = "Tambah Stok"
-    static var description = IntentDescription("Membuka Invent dan mulai sesi tambah stok lewat suara.")
+    static var title: LocalizedStringResource = "Add Stock"
+    static var description = IntentDescription("Opens Invent and starts a voice add-stock session.")
     static var openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
@@ -27,22 +27,19 @@ struct StockAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: AddStockIntent(),
             phrases: [
-                "Tambah stok di \(.applicationName)",
-                "Tambah stok pakai \(.applicationName)",
-                "Tambah stok gram di \(.applicationName)",
-                "Tambah stok kilogram di \(.applicationName)",
-                "Tambah stok liter di \(.applicationName)",
-                "Tambah stok pcs di \(.applicationName)",
-                "Tambah stok box di \(.applicationName)",
-                "Saya mau tambah stok di \(.applicationName)",
-                "Saya ingin menambahkan stok di \(.applicationName)",
-                "Tolong tambah stok di \(.applicationName)",
                 "Add stock in \(.applicationName)",
+                "Add stock using \(.applicationName)",
+                "Add stock in grams in \(.applicationName)",
+                "Add stock in kilograms in \(.applicationName)",
+                "Add stock in liters in \(.applicationName)",
+                "Add stock in pieces in \(.applicationName)",
+                "Add stock in boxes in \(.applicationName)",
                 "I want to add stock in \(.applicationName)",
                 "I'd like to add stock to \(.applicationName)",
-                "Help me add stock in \(.applicationName)"
+                "Help me add stock in \(.applicationName)",
+                "Please add stock in \(.applicationName)"
             ],
-            shortTitle: "Tambah Stok",
+            shortTitle: "Add Stock",
             systemImageName: "shippingbox.fill"
         )
     }
