@@ -166,6 +166,51 @@ final class LLMService {
         return raw.lowercased().contains("yes")
     }
 
+    /// Classifies a spoken reply to a yes/no question as affirmative or not,
+    /// for free-form phrasing ("iya", "betul", "yoi", "nggak", "salah itu")
+    /// rather than a fixed word list. `question` is included so the model
+    /// judges the reply in context (e.g. "benar?" vs "mau tambah lagi?") —
+    /// used by StockSessionOverlay's per-item confirm and continue-session
+    /// prompts.
+    func classifyYesNo(reply: String, question: String) async throws -> Bool {
+        await loadIfNeeded()
+        guard let modelContainer else {
+            throw NSError(domain: "LLMService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
+        }
+
+        state = .generating
+        defer { state = .ready }
+
+        let systemPrompt = """
+        The user was just asked: "\(question)". Reply with ONLY "yes" if their answer \
+        is affirmative/agreeing (e.g. "yes", "yeah", "correct", "right"), or "no" if \
+        their answer is negative/disagreeing (e.g. "no", "nope", "that's wrong", "not that").
+        """
+
+        let chat: [Chat.Message] = [
+            .system(systemPrompt),
+            .user(reply)
+        ]
+
+        let raw = try await modelContainer.perform { context in
+            let input = try await context.processor.prepare(input: .init(chat: chat))
+            var output = ""
+            let stream = try MLXLMCommon.generate(
+                input: input,
+                parameters: GenerateParameters(temperature: 0.0),
+                context: context
+            )
+            for try await item in stream {
+                if case .chunk(let text) = item {
+                    output += text
+                }
+            }
+            return output
+        }
+
+        return raw.lowercased().contains("yes")
+    }
+
     /// Extracts item name/quantity/unit from a free-text stock phrase, e.g.
     /// "50gr of chicken" -> {itemName: "chicken", quantity: 50, unit: "gr"}.
     /// Used by AddStockIntent so Siri can take one free-text parameter
