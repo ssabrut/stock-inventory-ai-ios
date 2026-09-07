@@ -42,6 +42,7 @@ struct InventoryScreen: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                InventoryTableHeader()
                 List {
                     ForEach(entries) { entry in
                         InventoryRow(entry: entry)
@@ -64,6 +65,7 @@ struct InventoryScreen: View {
                                 }
                                 .tint(.orange)
                             }
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     }
                 }
                 .listStyle(.plain)
@@ -155,27 +157,58 @@ private struct UseStockSheet: View {
     }
 }
 
+/// Column widths shared between the header and each row so values line up —
+/// SwiftUI's `List` has no built-in table/grid layout, so alignment has to be
+/// enforced manually via matching fixed-width frames.
+private enum InventoryColumn {
+    static let quantity: CGFloat = 60
+    static let unit: CGFloat = 56
+}
+
+private struct InventoryTableHeader: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Nama")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Qty")
+                .frame(width: InventoryColumn.quantity, alignment: .trailing)
+            Text("Satuan")
+                .frame(width: InventoryColumn.unit, alignment: .leading)
+        }
+        .font(.caption.bold())
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
+    }
+}
+
 private struct InventoryRow: View {
     let entry: StockEntryEntity
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(entry.itemName ?? "")
-                    .font(.headline)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
                 if let date = entry.date {
                     Text(date, style: .date)
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+            Text(formatQuantity(entry.quantity))
+                .font(.subheadline)
+                .frame(width: InventoryColumn.quantity, alignment: .trailing)
 
-            Text("\(formatQuantity(entry.quantity)) \(entry.unit ?? "")")
-                .font(.subheadline.bold())
+            Text(entry.unit ?? "")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: InventoryColumn.unit, alignment: .leading)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
     }
 }
 
