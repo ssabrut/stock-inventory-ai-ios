@@ -21,7 +21,11 @@ final class PersistenceController {
         container = NSPersistentContainer(name: "Inventory")
 
         if inMemory {
-            container.persistentStoreDescriptions.first?.url = URL(filePath: "/dev/null")
+            // A true NSInMemoryStoreType, not the /dev/null SQLite trick —
+            // that variant still writes SQLite's WAL/journal machinery
+            // against a null file, which combined with history tracking
+            // below made every save() pathologically slow in tests.
+            container.persistentStoreDescriptions.first?.type = NSInMemoryStoreType
         } else if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID) {
             let storeURL = groupURL.appending(path: "Inventory.sqlite")
             container.persistentStoreDescriptions.first?.url = storeURL
@@ -30,10 +34,16 @@ final class PersistenceController {
         container.persistentStoreDescriptions.first?.shouldMigrateStoreAutomatically = true
         container.persistentStoreDescriptions.first?.shouldInferMappingModelAutomatically = true
 
-        // Needed so this process picks up writes made by the Siri AppIntent,
-        // which runs in a separate process against the same App Group store.
-        container.persistentStoreDescriptions.first?.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
-        container.persistentStoreDescriptions.first?.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        if !inMemory {
+            // Needed so this process picks up writes made by the Siri
+            // AppIntent, which runs in a separate process against the same
+            // App Group store. Persistent history tracking is a SQLite-store
+            // feature — meaningless (and, against a null-backed store,
+            // expensive) for the in-memory test store, which nothing else
+            // ever writes to concurrently.
+            container.persistentStoreDescriptions.first?.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
+            container.persistentStoreDescriptions.first?.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        }
 
         container.loadPersistentStores { _, error in
             if let error {
