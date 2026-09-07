@@ -28,6 +28,7 @@ final class LLMService {
 
     private var modelContainer: ModelContainer?
     private let modelId = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+    private let toolRegistry = ToolRegistry()
 
     /// Persists downloaded model weights to Documents instead of Caches, so the
     /// ~1GB download survives Xcode debug reinstalls (which can purge Caches).
@@ -76,7 +77,56 @@ final class LLMService {
         }
     }
 
-    func reply(to prompt: String, stockContext: String? = nil) async throws -> String {
+    /// Tanya AI's chat entry point: lets the model call one of ToolRegistry's
+    /// stock tools when it needs live inventory data instead of always
+    /// injecting the full stock list as context (the old `reply(to:
+    /// stockContext:)` approach). Capped at one tool-call round — a 1.5B
+    /// on-device model is reliable enough to pick and use a single tool, but
+    /// chaining several compounds the chance of it hallucinating a bad call
+    /// or looping, so after one tool result it must produce a final answer.
+    func agenticReply(to prompt: String) async throws -> String {
+        let systemPrompt = """
+        Kamu adalah asisten AI untuk aplikasi manajemen stok inventori. Jawab singkat, jelas, dan dalam Bahasa Indonesia.
+
+        \(toolRegistry.systemPromptFragment)
+        """
+
+        let firstRaw = try await generate(
+            chat: [.system(systemPrompt), .user(prompt)],
+            temperature: 0.6
+        )
+
+        switch toolRegistry.parseReply(firstRaw) {
+        case .answer(let text):
+            return text
+
+        case .toolCall(let call):
+            let toolResult = toolRegistry.execute(call)
+
+            let finalPrompt = """
+            Tool "\(call.name)" returned:
+            \(toolResult)
+
+            Reply with ONLY {"answer": "<your reply to the user in Bahasa Indonesia, using the tool result above>"}
+            """
+
+            let finalRaw = try await generate(
+                chat: [.system(systemPrompt), .user(prompt), .assistant(firstRaw), .user(finalPrompt)],
+                temperature: 0.6
+            )
+
+            switch toolRegistry.parseReply(finalRaw) {
+            case .answer(let text):
+                return text
+            case .toolCall:
+                // Model tried to chain a second tool call past the one-round
+                // cap; fall back to its raw text rather than executing it.
+                return finalRaw
+            }
+        }
+    }
+
+    private func generate(chat: [Chat.Message], temperature: Float) async throws -> String {
         await loadIfNeeded()
         guard let modelContainer else {
             throw NSError(domain: "LLMService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
@@ -85,22 +135,12 @@ final class LLMService {
         state = .generating
         defer { state = .ready }
 
-        var systemPrompt = "Kamu adalah asisten AI untuk aplikasi manajemen stok inventori. Jawab singkat, jelas, dan dalam Bahasa Indonesia."
-        if let stockContext {
-            systemPrompt += "\n\nData stok saat ini:\n\(stockContext)"
-        }
-
-        let chat: [Chat.Message] = [
-            .system(systemPrompt),
-            .user(prompt)
-        ]
-
-        let result = try await modelContainer.perform { context in
+        return try await modelContainer.perform { context in
             let input = try await context.processor.prepare(input: .init(chat: chat))
             var output = ""
             let stream = try MLXLMCommon.generate(
                 input: input,
-                parameters: GenerateParameters(temperature: 0.6),
+                parameters: GenerateParameters(temperature: temperature),
                 context: context
             )
             for try await item in stream {
@@ -110,8 +150,6 @@ final class LLMService {
             }
             return output
         }
-
-        return result
     }
 
     struct ParsedStockEntry: Decodable {

@@ -103,7 +103,7 @@ struct ChatScreen: View {
 
         Task {
             do {
-                let reply = try await llm.reply(to: text)
+                let reply = try await llm.agenticReply(to: text)
                 messages.append(ChatMessage(isUser: false, text: reply))
             } catch {
                 messages.append(ChatMessage(isUser: false, text: "Maaf, terjadi kesalahan: \(error.localizedDescription)"))
