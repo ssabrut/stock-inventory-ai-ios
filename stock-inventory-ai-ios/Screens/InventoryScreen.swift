@@ -15,6 +15,18 @@ struct InventoryScreen: View {
     @State private var editingEntry: StockEntryEntity?
     @State private var isAddingNew = false
 
+    /// Entries bucketed by calendar day (most recent day first), each day's
+    /// entries kept in the @FetchRequest's own date-descending order.
+    private var groupedEntries: [(day: Date, entries: [StockEntryEntity])] {
+        let calendar = Calendar.current
+        let groups = Dictionary(grouping: entries) { entry in
+            calendar.startOfDay(for: entry.date ?? .now)
+        }
+        return groups.keys.sorted(by: >).map { day in
+            (day: day, entries: groups[day] ?? [])
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
@@ -42,19 +54,23 @@ struct InventoryScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(entries) { entry in
-                        InventoryRow(entry: entry)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                editingEntry = entry
+                    ForEach(groupedEntries, id: \.day) { group in
+                        Section(sectionTitle(for: group.day)) {
+                            ForEach(group.entries) { entry in
+                                InventoryRow(entry: entry)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        editingEntry = entry
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            delete(entry)
+                                        } label: {
+                                            Label("Hapus", systemImage: "trash")
+                                        }
+                                    }
                             }
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    delete(entry)
-                                } label: {
-                                    Label("Hapus", systemImage: "trash")
-                                }
-                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -68,6 +84,17 @@ struct InventoryScreen: View {
         .sheet(isPresented: $isAddingNew) {
             StockEntryFormSheet(mode: .create)
         }
+    }
+
+    private func sectionTitle(for day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Hari Ini" }
+        if calendar.isDateInYesterday(day) { return "Kemarin" }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.locale = Locale(identifier: "id_ID")
+        return formatter.string(from: day)
     }
 
     private func delete(_ entry: StockEntryEntity) {
@@ -117,6 +144,7 @@ private struct StockEntryFormSheet: View {
     @State private var itemName: String = ""
     @State private var quantityText: String = ""
     @State private var unit: String = StockPhraseParser.canonicalUnits.first ?? "pcs"
+    @State private var date: Date = .now
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -141,6 +169,7 @@ private struct StockEntryFormSheet: View {
                             Text(option).tag(option)
                         }
                     }
+                    DatePicker("Tanggal", selection: $date, displayedComponents: .date)
                 }
 
                 if case .edit(let entry) = mode {
@@ -183,6 +212,9 @@ private struct StockEntryFormSheet: View {
         if let storedUnit = entry.unit, StockPhraseParser.canonicalUnits.contains(storedUnit) {
             unit = storedUnit
         }
+        if let storedDate = entry.date {
+            date = storedDate
+        }
     }
 
     private func save() {
@@ -192,10 +224,10 @@ private struct StockEntryFormSheet: View {
 
         switch mode {
         case .create:
-            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit)
+            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, date: date)
         case .edit(let entry):
             guard let id = entry.id else { return }
-            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit)
+            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit, date: date)
         }
     }
 }

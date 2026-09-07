@@ -39,8 +39,8 @@ enum StockStore {
     }
 
     @discardableResult
-    static func add(itemName: String, quantity: Int, unit: String) -> StockEntry {
-        let entry = StockEntry(itemName: itemName, quantity: quantity, unit: unit)
+    static func add(itemName: String, quantity: Int, unit: String, date: Date = .now) -> StockEntry {
+        let entry = StockEntry(itemName: itemName, quantity: quantity, unit: unit, date: date)
 
         let entity = StockEntryEntity(context: context)
         entity.id = entry.id
@@ -74,7 +74,7 @@ enum StockStore {
         return results
     }
 
-    static func update(id: UUID, itemName: String, quantity: Int, unit: String) {
+    static func update(id: UUID, itemName: String, quantity: Int, unit: String, date: Date) {
         let request = StockEntryEntity.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         request.fetchLimit = 1
@@ -83,6 +83,7 @@ enum StockStore {
         entity.itemName = itemName
         entity.quantity = Int32(quantity)
         entity.unit = unit
+        entity.date = date
 
         try? context.save()
     }
