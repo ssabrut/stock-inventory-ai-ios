@@ -204,17 +204,16 @@ private struct StockEntryFormSheet: View {
         return false
     }
 
-    /// Total cost is required when adding new stock (it's what feeds COGS),
-    /// but stays an optional raw override when editing — see `save()`.
+    /// Total cost is required when adding new stock (it's what feeds COGS).
+    /// Editing no longer touches cost at all — see `save()`, which passes
+    /// the entry's existing costPerUnit straight through unchanged.
     private var canSave: Bool {
         guard !itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               Double(quantityText) != nil,
               !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return false }
 
-        if isEditing {
-            return totalCostText.isEmpty || Double(totalCostText) != nil
-        }
+        if isEditing { return true }
         guard let totalCost = Double(totalCostText) else { return false }
         return totalCost > 0
     }
@@ -234,13 +233,13 @@ private struct StockEntryFormSheet: View {
                     DatePicker("Tanggal", selection: $date, displayedComponents: .date)
                 }
 
-                Section {
-                    TextField(isEditing ? "Harga per satuan (opsional)" : "Total harga", text: $totalCostText)
-                        .keyboardType(.decimalPad)
-                } footer: {
-                    Text(isEditing
-                        ? "Mengubah nilai ini langsung menimpa rata-rata biaya per satuan, tanpa dicatat sebagai transaksi baru."
-                        : "Total biaya untuk jumlah stok ini, mis. Rp150.000 untuk 5kg. Dipakai untuk menghitung rata-rata biaya dan HPP (COGS).")
+                if !isEditing {
+                    Section {
+                        TextField("Total harga", text: $totalCostText)
+                            .keyboardType(.decimalPad)
+                    } footer: {
+                        Text("Total biaya untuk jumlah stok ini, mis. Rp150.000 untuk 5kg. Dipakai untuk menghitung rata-rata biaya dan HPP (COGS).")
+                    }
                 }
 
                 if case .edit(let entry) = mode {
@@ -283,11 +282,6 @@ private struct StockEntryFormSheet: View {
         if let storedUnit = entry.unit, StockPhraseParser.canonicalUnits.contains(storedUnit) {
             unit = storedUnit
         }
-        // Edit mode shows/overrides per-unit cost directly (not a batch
-        // total — see the field's label/footer above).
-        if entry.costPerUnit > 0 {
-            totalCostText = formatQuantity(entry.costPerUnit)
-        }
         if let storedDate = entry.date {
             date = storedDate
         }
@@ -297,17 +291,18 @@ private struct StockEntryFormSheet: View {
         guard let quantity = Double(quantityText) else { return }
         let trimmedName = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let enteredValue = Double(totalCostText) ?? 0
 
         switch mode {
         case .create:
-            // Field holds a batch total here; StockStore.add divides by
-            // quantity internally to get cost-per-unit.
-            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, totalCost: enteredValue, date: date)
+            // Field holds a batch total; StockStore.add divides by quantity
+            // internally to get cost-per-unit.
+            let totalCost = Double(totalCostText) ?? 0
+            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, totalCost: totalCost, date: date)
         case .edit(let entry):
             guard let id = entry.id else { return }
-            // Field holds a direct per-unit override here, not a total.
-            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit, costPerUnit: enteredValue, date: date)
+            // Cost is no longer editable here — pass the entry's existing
+            // costPerUnit straight through unchanged.
+            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit, costPerUnit: entry.costPerUnit, date: date)
         }
     }
 }
