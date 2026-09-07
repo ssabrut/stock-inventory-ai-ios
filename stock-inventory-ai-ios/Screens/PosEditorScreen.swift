@@ -85,19 +85,175 @@ private struct StartShiftScreen: View {
 }
 
 private struct EditPosScreen: View {
+    @State private var menuItems: [MenuItem] = MenuItem.mockItems
+    @State private var itemToEdit: MenuItem?
+    @State private var isPresentingNewItem = false
+
     var body: some View {
+        Group {
+            if menuItems.isEmpty {
+                emptyState
+            } else {
+                menuList
+            }
+        }
+        .navigationTitle("Edit POS")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isPresentingNewItem = true
+                } label: {
+                    Label("Tambah Menu", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(item: $itemToEdit) { item in
+            MenuItemEditorSheet(item: item) { updated in
+                if let index = menuItems.firstIndex(where: { $0.id == updated.id }) {
+                    menuItems[index] = updated
+                }
+            }
+        }
+        .sheet(isPresented: $isPresentingNewItem) {
+            MenuItemEditorSheet(item: nil) { newItem in
+                menuItems.append(newItem)
+            }
+        }
+    }
+
+    private var menuList: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(menuItems) { item in
+                    Button {
+                        itemToEdit = item
+                    } label: {
+                        MenuItemCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 40))
                 .foregroundStyle(Color.accentColor)
-            Text("Edit POS")
+            Text("Belum ada menu")
                 .font(.title3.bold())
-            Text("Halaman ini belum diimplementasikan.")
+            Text("Tambahkan menu pertama untuk mulai mengatur POS.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("Edit POS")
+    }
+}
+
+private struct MenuItemCard: View {
+    let item: MenuItem
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 48, height: 48)
+                Image(systemName: item.icon)
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.primary)
+                Text(item.category)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(item.price.formatted(.currency(code: "IDR").precision(.fractionLength(0))))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.primary)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+    }
+}
+
+private struct MenuItemEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let item: MenuItem?
+    let onSave: (MenuItem) -> Void
+
+    @State private var name: String
+    @State private var priceText: String
+    @State private var category: String
+    @State private var icon: String
+
+    init(item: MenuItem?, onSave: @escaping (MenuItem) -> Void) {
+        self.item = item
+        self.onSave = onSave
+        _name = State(initialValue: item?.name ?? "")
+        _priceText = State(initialValue: item.map { String(Int($0.price)) } ?? "")
+        _category = State(initialValue: item?.category ?? "")
+        _icon = State(initialValue: item?.icon ?? "fork.knife")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Detail Menu") {
+                    TextField("Nama menu", text: $name)
+                    TextField("Harga", text: $priceText)
+                        .keyboardType(.numberPad)
+                    TextField("Kategori", text: $category)
+                }
+            }
+            .navigationTitle(item == nil ? "Tambah Menu" : "Edit Menu")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Batal") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Simpan") {
+                        let price = Double(priceText) ?? 0
+                        let saved = MenuItem(
+                            id: item?.id ?? UUID(),
+                            name: name,
+                            price: price,
+                            category: category,
+                            icon: icon
+                        )
+                        onSave(saved)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
     }
 }
 
