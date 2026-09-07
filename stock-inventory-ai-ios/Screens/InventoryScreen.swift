@@ -8,24 +8,12 @@ import SwiftUI
 
 struct InventoryScreen: View {
     @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
+        sortDescriptors: [NSSortDescriptor(keyPath: \StockEntryEntity.itemName, ascending: true)]
     )
     private var entries: FetchedResults<StockEntryEntity>
 
     @State private var editingEntry: StockEntryEntity?
     @State private var isAddingNew = false
-
-    /// Entries bucketed by calendar day (most recent day first), each day's
-    /// entries kept in the @FetchRequest's own date-descending order.
-    private var groupedEntries: [(day: Date, entries: [StockEntryEntity])] {
-        let calendar = Calendar.current
-        let groups = Dictionary(grouping: entries) { entry in
-            calendar.startOfDay(for: entry.date ?? .now)
-        }
-        return groups.keys.sorted(by: >).map { day in
-            (day: day, entries: groups[day] ?? [])
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -54,23 +42,19 @@ struct InventoryScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(groupedEntries, id: \.day) { group in
-                        Section(sectionTitle(for: group.day)) {
-                            ForEach(group.entries) { entry in
-                                InventoryRow(entry: entry)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        editingEntry = entry
-                                    }
-                                    .swipeActions(edge: .trailing) {
-                                        Button(role: .destructive) {
-                                            delete(entry)
-                                        } label: {
-                                            Label("Hapus", systemImage: "trash")
-                                        }
-                                    }
+                    ForEach(entries) { entry in
+                        InventoryRow(entry: entry)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editingEntry = entry
                             }
-                        }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    delete(entry)
+                                } label: {
+                                    Label("Hapus", systemImage: "trash")
+                                }
+                            }
                     }
                 }
                 .listStyle(.plain)
@@ -84,17 +68,6 @@ struct InventoryScreen: View {
         .sheet(isPresented: $isAddingNew) {
             StockEntryFormSheet(mode: .create)
         }
-    }
-
-    private func sectionTitle(for day: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Hari Ini" }
-        if calendar.isDateInYesterday(day) { return "Kemarin" }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.locale = Locale(identifier: "id_ID")
-        return formatter.string(from: day)
     }
 
     private func delete(_ entry: StockEntryEntity) {
@@ -120,7 +93,7 @@ private struct InventoryRow: View {
 
             Spacer()
 
-            Text("\(entry.quantity) \(entry.unit ?? "")")
+            Text("\(formatQuantity(entry.quantity)) \(entry.unit ?? "")")
                 .font(.subheadline.bold())
         }
         .padding(.vertical, 6)
@@ -153,7 +126,7 @@ private struct StockEntryFormSheet: View {
 
     private var canSave: Bool {
         !itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && Int(quantityText) != nil
+            && Double(quantityText) != nil
             && !unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -163,7 +136,7 @@ private struct StockEntryFormSheet: View {
                 Section("Detail Stok") {
                     TextField("Nama barang", text: $itemName)
                     TextField("Jumlah", text: $quantityText)
-                        .keyboardType(.numberPad)
+                        .keyboardType(.decimalPad)
                     Picker("Satuan", selection: $unit) {
                         ForEach(StockPhraseParser.canonicalUnits, id: \.self) { option in
                             Text(option).tag(option)
@@ -204,7 +177,7 @@ private struct StockEntryFormSheet: View {
     private func prefill() {
         guard case .edit(let entry) = mode else { return }
         itemName = entry.itemName ?? ""
-        quantityText = String(entry.quantity)
+        quantityText = formatQuantity(entry.quantity)
         // Falls back to the first canonical unit if the stored value isn't
         // one of them (e.g. a legacy entry from before the picker existed),
         // so the Picker always shows a selected row instead of appearing
@@ -218,7 +191,7 @@ private struct StockEntryFormSheet: View {
     }
 
     private func save() {
-        guard let quantity = Int(quantityText) else { return }
+        guard let quantity = Double(quantityText) else { return }
         let trimmedName = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
 

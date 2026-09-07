@@ -5,6 +5,22 @@
 
 import Foundation
 
+/// The LLM's JSON tool-call arguments decode numbers as NSNumber (via
+/// JSONSerialization), which bridges to `Int` only when the value happens to
+/// have no fractional part — "5.5" or even "50" typed as a JSON float would
+/// fail `as? Int`. Reading through NSNumber's own doubleValue accepts either.
+private func doubleArgument(_ arguments: [String: Any], _ key: String) -> Double? {
+    (arguments[key] as? NSNumber)?.doubleValue
+}
+
+/// Whole numbers print without a decimal ("5 kg"); merged fractional amounts
+/// (e.g. 5kg + 500gram converted to 5.5kg) keep up to 2 decimal places.
+func formatQuantity(_ value: Double) -> String {
+    value.truncatingRemainder(dividingBy: 1) == 0
+        ? String(Int(value))
+        : String(format: "%.2f", value)
+}
+
 /// Lists all stock, or filters by item name (substring, case-insensitive)
 /// when the LLM is answering a question about one specific item — e.g.
 /// "how much chicken do we have?" -> itemName: "chicken".
@@ -30,7 +46,7 @@ struct GetStockTool: AgentTool {
         }
 
         return entries
-            .map { "\($0.itemName): \($0.quantity) \($0.unit)" }
+            .map { "\($0.itemName): \(formatQuantity($0.quantity)) \($0.unit)" }
             .joined(separator: "\n")
     }
 }
@@ -44,23 +60,23 @@ struct AddStockTool: AgentTool {
     let description = "Add a new stock entry to inventory."
     let parameters: [AgentToolParameter] = [
         AgentToolParameter(name: "itemName", type: "string", description: "Name of the item"),
-        AgentToolParameter(name: "quantity", type: "integer", description: "Amount to add"),
+        AgentToolParameter(name: "quantity", type: "number", description: "Amount to add"),
         AgentToolParameter(name: "unit", type: "string", description: "Unit of measure, e.g. gram, kg, pcs")
     ]
     let isMutating = true
 
     func confirmationSummary(arguments: [String: Any]) -> String {
         let itemName = arguments["itemName"] as? String ?? "item"
-        let quantity = arguments["quantity"] as? Int ?? 0
+        let quantity = doubleArgument(arguments, "quantity") ?? 0
         let unit = arguments["unit"] as? String ?? ""
-        return "Add \(quantity) \(unit) of \(itemName) to inventory?"
+        return "Add \(formatQuantity(quantity)) \(unit) of \(itemName) to inventory?"
     }
 
     func call(arguments: [String: Any]) throws -> String {
         guard let itemName = arguments["itemName"] as? String, !itemName.isEmpty else {
             throw AgentToolError(message: "Missing item name.")
         }
-        guard let quantity = arguments["quantity"] as? Int, quantity > 0 else {
+        guard let quantity = doubleArgument(arguments, "quantity"), quantity > 0 else {
             throw AgentToolError(message: "Missing or invalid quantity.")
         }
         guard let unit = arguments["unit"] as? String, !unit.isEmpty else {
@@ -68,7 +84,7 @@ struct AddStockTool: AgentTool {
         }
 
         let entry = StockStore.add(itemName: itemName, quantity: quantity, unit: unit)
-        return "Added \(entry.quantity) \(entry.unit) of \(entry.itemName)."
+        return "Added \(formatQuantity(entry.quantity)) \(entry.unit) of \(entry.itemName)."
     }
 }
 
@@ -81,7 +97,7 @@ struct UpdateStockTool: AgentTool {
     let parameters: [AgentToolParameter] = [
         AgentToolParameter(name: "itemName", type: "string", description: "Current name of the item to update"),
         AgentToolParameter(name: "newItemName", type: "string", description: "New name for the item", isRequired: false),
-        AgentToolParameter(name: "quantity", type: "integer", description: "New quantity", isRequired: false),
+        AgentToolParameter(name: "quantity", type: "number", description: "New quantity", isRequired: false),
         AgentToolParameter(name: "unit", type: "string", description: "New unit of measure", isRequired: false)
     ]
     let isMutating = true
@@ -92,8 +108,8 @@ struct UpdateStockTool: AgentTool {
         if let newItemName = arguments["newItemName"] as? String, !newItemName.isEmpty {
             changes.append("rename to \(newItemName)")
         }
-        if let quantity = arguments["quantity"] as? Int {
-            changes.append("quantity to \(quantity)")
+        if let quantity = doubleArgument(arguments, "quantity") {
+            changes.append("quantity to \(formatQuantity(quantity))")
         }
         if let unit = arguments["unit"] as? String, !unit.isEmpty {
             changes.append("unit to \(unit)")
@@ -113,11 +129,11 @@ struct UpdateStockTool: AgentTool {
         }
 
         let newItemName = (arguments["newItemName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? match.itemName
-        let newQuantity = arguments["quantity"] as? Int ?? match.quantity
+        let newQuantity = doubleArgument(arguments, "quantity") ?? match.quantity
         let newUnit = (arguments["unit"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? match.unit
 
         StockStore.update(id: match.id, itemName: newItemName, quantity: newQuantity, unit: newUnit, date: match.date)
-        return "Updated \(match.itemName) to \(newQuantity) \(newUnit)\(newItemName != match.itemName ? " (renamed to \(newItemName))" : "")."
+        return "Updated \(match.itemName) to \(formatQuantity(newQuantity)) \(newUnit)\(newItemName != match.itemName ? " (renamed to \(newItemName))" : "")."
     }
 }
 
@@ -147,6 +163,6 @@ struct DeleteStockTool: AgentTool {
         }
 
         StockStore.delete(id: match.id)
-        return "Deleted \(match.itemName) (\(match.quantity) \(match.unit)) from inventory."
+        return "Deleted \(match.itemName) (\(formatQuantity(match.quantity)) \(match.unit)) from inventory."
     }
 }

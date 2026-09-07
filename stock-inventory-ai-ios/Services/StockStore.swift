@@ -9,11 +9,11 @@ import Foundation
 struct StockEntry: Identifiable, Codable {
     let id: UUID
     let itemName: String
-    let quantity: Int
+    let quantity: Double
     let unit: String
     let date: Date
 
-    init(id: UUID = UUID(), itemName: String, quantity: Int, unit: String, date: Date = .now) {
+    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String, date: Date = .now) {
         self.id = id
         self.itemName = itemName
         self.quantity = quantity
@@ -31,6 +31,19 @@ enum StockStore {
     /// real inventory data.
     static var context: NSManagedObjectContext = PersistenceController.shared.viewContext
 
+    /// Units that measure the same physical quantity, keyed to their common
+    /// base unit and a multiplier to reach it. Merge-on-add converts into the
+    /// base unit so e.g. "5 kg" + "500 gram" combines into one entry instead
+    /// of two incompatible numbers. Base is the larger unit (kg, liter) so a
+    /// merged entry displays as "5.5 kg" rather than "5500 gram". Units
+    /// outside these families (pcs, box, ikat, ...) count discrete things
+    /// rather than measuring an amount, so they only merge against an
+    /// identical unit — see `mergeUnit`.
+    private static let unitConversion: [String: (base: String, toBase: Double)] = [
+        "kg": ("kg", 1), "gram": ("kg", 0.001),
+        "liter": ("liter", 1), "ml": ("liter", 0.001)
+    ]
+
     static func all() -> [StockEntry] {
         let request = StockEntryEntity.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(keyPath: \StockEntryEntity.date, ascending: false)]
@@ -39,14 +52,56 @@ enum StockStore {
         return results.map { $0.asStockEntry }
     }
 
+    /// Finds an existing entry to merge into: same item name (exact,
+    /// case-insensitive — matching update/delete's primary lookup) and a
+    /// unit compatible for merging (see `mergeUnit`).
+    private static func mergeCandidate(itemName: String, unit: String) -> StockEntryEntity? {
+        let request = StockEntryEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "itemName ==[c] %@", itemName)
+
+        guard let matches = try? context.fetch(request) else { return nil }
+        return matches.first { entry in
+            guard let existingUnit = entry.unit else { return false }
+            return mergeUnit(existingUnit, unit) != nil
+        }
+    }
+
+    /// Returns the base unit both units should be summed in, or nil if they
+    /// can't be merged (different families, e.g. "kg" and "pcs").
+    private static func mergeUnit(_ a: String, _ b: String) -> String? {
+        if a == b { return unitConversion[a]?.base ?? a }
+        guard let ca = unitConversion[a], let cb = unitConversion[b], ca.base == cb.base else { return nil }
+        return ca.base
+    }
+
+    private static func amount(_ quantity: Double, in unit: String, asBase base: String) -> Double {
+        guard let conversion = unitConversion[unit], conversion.base == base else { return quantity }
+        return quantity * conversion.toBase
+    }
+
+    /// Adds stock, merging into an existing entry with the same item name and
+    /// a compatible unit (converting both into their common base unit) rather
+    /// than always inserting a new row.
     @discardableResult
-    static func add(itemName: String, quantity: Int, unit: String, date: Date = .now) -> StockEntry {
+    static func add(itemName: String, quantity: Double, unit: String, date: Date = .now) -> StockEntry {
+        if let existing = mergeCandidate(itemName: itemName, unit: unit),
+           let existingUnit = existing.unit,
+           let base = mergeUnit(existingUnit, unit) {
+            let combined = amount(existing.quantity, in: existingUnit, asBase: base) + amount(quantity, in: unit, asBase: base)
+            existing.quantity = combined
+            existing.unit = base
+            existing.date = date
+
+            try? context.save()
+            return existing.asStockEntry
+        }
+
         let entry = StockEntry(itemName: itemName, quantity: quantity, unit: unit, date: date)
 
         let entity = StockEntryEntity(context: context)
         entity.id = entry.id
         entity.itemName = entry.itemName
-        entity.quantity = Int32(entry.quantity)
+        entity.quantity = entry.quantity
         entity.unit = entry.unit
         entity.date = entry.date
 
@@ -56,33 +111,24 @@ enum StockStore {
 
     /// Writes several entries in one Core Data save, used by AddStockIntent
     /// after the user confirms the full pending list from a Siri session.
+    /// Each item merges with an existing entry the same way the single-item
+    /// `add` does, so a Siri session adding "ayam" twice doesn't duplicate it.
     @discardableResult
-    static func add(_ entries: [(itemName: String, quantity: Int, unit: String)]) -> [StockEntry] {
-        let results = entries.map { item -> StockEntry in
-            let entry = StockEntry(itemName: item.itemName, quantity: item.quantity, unit: item.unit)
-
-            let entity = StockEntryEntity(context: context)
-            entity.id = entry.id
-            entity.itemName = entry.itemName
-            entity.quantity = Int32(entry.quantity)
-            entity.unit = entry.unit
-            entity.date = entry.date
-
-            return entry
+    static func add(_ entries: [(itemName: String, quantity: Double, unit: String)]) -> [StockEntry] {
+        let results = entries.map { item in
+            add(itemName: item.itemName, quantity: item.quantity, unit: item.unit)
         }
-
-        try? context.save()
         return results
     }
 
-    static func update(id: UUID, itemName: String, quantity: Int, unit: String, date: Date) {
+    static func update(id: UUID, itemName: String, quantity: Double, unit: String, date: Date) {
         let request = StockEntryEntity.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         request.fetchLimit = 1
 
         guard let entity = try? context.fetch(request).first else { return }
         entity.itemName = itemName
-        entity.quantity = Int32(quantity)
+        entity.quantity = quantity
         entity.unit = unit
         entity.date = date
 
@@ -106,7 +152,7 @@ private extension StockEntryEntity {
         StockEntry(
             id: id ?? UUID(),
             itemName: itemName ?? "",
-            quantity: Int(quantity),
+            quantity: quantity,
             unit: unit ?? "",
             date: date ?? .now
         )

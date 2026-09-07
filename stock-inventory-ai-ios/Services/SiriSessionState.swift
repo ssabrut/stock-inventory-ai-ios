@@ -10,10 +10,10 @@ import Foundation
 struct PendingStockItemDTO: Codable, Identifiable, Equatable {
     let id: UUID
     let itemName: String
-    let quantity: Int
+    let quantity: Double
     let unit: String
 
-    init(id: UUID = UUID(), itemName: String, quantity: Int, unit: String) {
+    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String) {
         self.id = id
         self.itemName = itemName
         self.quantity = quantity

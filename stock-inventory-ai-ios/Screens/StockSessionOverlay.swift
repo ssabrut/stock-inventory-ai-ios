@@ -196,7 +196,7 @@ struct StockSessionOverlay: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(items) { item in
                         HStack {
-                            Text("• \(item.quantity) \(item.unit) \(item.itemName)")
+                            Text("• \(formatQuantity(item.quantity)) \(item.unit) \(item.itemName)")
                                 .font(.subheadline)
                             Spacer()
                             if phase == .finalSummary {
@@ -245,7 +245,7 @@ struct StockSessionOverlay: View {
                     .foregroundStyle(.secondary)
             }
         case .confirmingItem(let entry):
-            Text("\(entry.quantity) \(entry.unit) \(entry.itemName) — is that right?")
+            Text("\(formatQuantity(entry.quantity)) \(entry.unit) \(entry.itemName) — is that right?")
                 .font(.subheadline)
         case .awaitingCorrection:
             Text("Say the correct item.")
@@ -340,7 +340,7 @@ struct StockSessionOverlay: View {
         Task {
             defer { isParsing = false }
             do {
-                let isCorrect = try await llm.classifyYesNo(reply: text, question: "Is this item correct: \(entry.quantity) \(entry.unit) \(entry.itemName)?")
+                let isCorrect = try await llm.classifyYesNo(reply: text, question: "Is this item correct: \(formatQuantity(entry.quantity)) \(entry.unit) \(entry.itemName)?")
                 if isCorrect {
                     SiriSessionState.append(entry, source: SiriSessionState.source)
                     refreshFromSharedState()

@@ -15,7 +15,7 @@ import NaturalLanguage
 /// open-ended generative guess.
 enum StockPhraseParser {
     struct Parsed {
-        let quantity: Int
+        let quantity: Double
         let unit: String
         /// Original text with the matched quantity+unit span removed, left
         /// for the caller (LLM or otherwise) to turn into an item name.
@@ -57,11 +57,12 @@ enum StockPhraseParser {
             return true
         }
 
-        // Find the first purely-numeric token (handles "150" in "150 gram"
-        // and "50" in the fused "50gr" — NLTokenizer splits digits from
+        // Find the first purely-numeric token (handles "150" in "150 gram",
+        // "50" in the fused "50gr", and "5.5" in "5.5 kg" — NLTokenizer keeps
+        // a decimal point joined to its digits, and splits digits from
         // trailing letters as separate word tokens).
-        guard let numberIndex = tokens.firstIndex(where: { Int($0.text) != nil }),
-              let quantity = Int(tokens[numberIndex].text)
+        guard let numberIndex = tokens.firstIndex(where: { Double($0.text) != nil }),
+              let quantity = Double(tokens[numberIndex].text)
         else {
             return Parsed(quantity: 1, unit: "pcs", remainingText: text)
         }

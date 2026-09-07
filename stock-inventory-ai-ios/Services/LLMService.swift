@@ -202,7 +202,7 @@ final class LLMService {
 
     struct ParsedStockEntry: Decodable {
         let itemName: String
-        let quantity: Int
+        let quantity: Double
         let unit: String
     }
 
