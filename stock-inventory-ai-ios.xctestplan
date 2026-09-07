@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "8588F0F2-9BC0-4466-9E08-D23696C4E576",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:stock-inventory-ai-ios.xcodeproj",
+      "identifier" : "A73FE19D30471DE800FD3456",
+      "name" : "stock-inventory-ai-ios"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:stock-inventory-ai-ios.xcodeproj",
+        "identifier" : "A758114D304E611800ACF9C8",
+        "name" : "stock-inventory-ai-iosTests"
+      }
+    }
+  ],
+  "version" : 1
+}

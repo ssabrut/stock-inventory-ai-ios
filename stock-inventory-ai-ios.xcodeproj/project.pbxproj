@@ -14,8 +14,20 @@
 		A78017F2304A8679003646D6 /* Transformers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017F1304A8679003646D6 /* Transformers */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A7581152304E611800ACF9C8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A73FE19630471DE800FD3456 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A73FE19D30471DE800FD3456;
+			remoteInfo = "stock-inventory-ai-ios";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "stock-inventory-ai-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A758114E304E611800ACF9C8 /* stock-inventory-ai-iosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "stock-inventory-ai-iosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7581159304E625600ACF9C8 /* stock-inventory-ai-ios.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = "stock-inventory-ai-ios.xctestplan"; sourceTree = "<group>"; };
 		A7801823304A9C46003646D6 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -23,6 +35,11 @@
 		A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "stock-inventory-ai-ios";
+			sourceTree = "<group>";
+		};
+		A758114F304E611800ACF9C8 /* stock-inventory-ai-iosTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "stock-inventory-ai-iosTests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -40,13 +57,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A758114B304E611800ACF9C8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A73FE19530471DE800FD3456 = {
 			isa = PBXGroup;
 			children = (
+				A7581159304E625600ACF9C8 /* stock-inventory-ai-ios.xctestplan */,
 				A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */,
+				A758114F304E611800ACF9C8 /* stock-inventory-ai-iosTests */,
 				A78017CB304A6933003646D6 /* Frameworks */,
 				A73FE19F30471DE800FD3456 /* Products */,
 				A7801823304A9C46003646D6 /* Secrets.xcconfig */,
@@ -57,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */,
+				A758114E304E611800ACF9C8 /* stock-inventory-ai-iosTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -98,6 +125,29 @@
 			productReference = A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A758114D304E611800ACF9C8 /* stock-inventory-ai-iosTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7581154304E611800ACF9C8 /* Build configuration list for PBXNativeTarget "stock-inventory-ai-iosTests" */;
+			buildPhases = (
+				A758114A304E611800ACF9C8 /* Sources */,
+				A758114B304E611800ACF9C8 /* Frameworks */,
+				A758114C304E611800ACF9C8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7581153304E611800ACF9C8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A758114F304E611800ACF9C8 /* stock-inventory-ai-iosTests */,
+			);
+			name = "stock-inventory-ai-iosTests";
+			packageProductDependencies = (
+			);
+			productName = "stock-inventory-ai-iosTests";
+			productReference = A758114E304E611800ACF9C8 /* stock-inventory-ai-iosTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -110,6 +160,10 @@
 				TargetAttributes = {
 					A73FE19D30471DE800FD3456 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					A758114D304E611800ACF9C8 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = A73FE19D30471DE800FD3456;
 					};
 				};
 			};
@@ -132,12 +186,20 @@
 			projectRoot = "";
 			targets = (
 				A73FE19D30471DE800FD3456 /* stock-inventory-ai-ios */,
+				A758114D304E611800ACF9C8 /* stock-inventory-ai-iosTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A73FE19C30471DE800FD3456 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A758114C304E611800ACF9C8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -154,7 +216,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A758114A304E611800ACF9C8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A7581153304E611800ACF9C8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A73FE19D30471DE800FD3456 /* stock-inventory-ai-ios */;
+			targetProxy = A7581152304E611800ACF9C8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A73FE1A730471DE900FD3456 /* Debug */ = {
@@ -358,6 +435,48 @@
 			};
 			name = Release;
 		};
+		A7581155304E611800ACF9C8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9NQQM8PHBZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.meeko.stock-inventory-ai-iosTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/stock-inventory-ai-ios.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/stock-inventory-ai-ios";
+			};
+			name = Debug;
+		};
+		A7581156304E611800ACF9C8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9NQQM8PHBZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.meeko.stock-inventory-ai-iosTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/stock-inventory-ai-ios.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/stock-inventory-ai-ios";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -375,6 +494,15 @@
 			buildConfigurations = (
 				A73FE1AA30471DE900FD3456 /* Debug */,
 				A73FE1AB30471DE900FD3456 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7581154304E611800ACF9C8 /* Build configuration list for PBXNativeTarget "stock-inventory-ai-iosTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7581155304E611800ACF9C8 /* Debug */,
+				A7581156304E611800ACF9C8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -26,9 +26,10 @@ struct StockEntry: Identifiable, Codable {
 /// runs out-of-process) can read/write the same stock data via the shared
 /// App Group persistent store. See PersistenceController.
 enum StockStore {
-    private static var context: NSManagedObjectContext {
-        PersistenceController.shared.viewContext
-    }
+    /// Defaults to the shared App Group store; tests override this with an
+    /// in-memory PersistenceController's viewContext so they never touch
+    /// real inventory data.
+    static var context: NSManagedObjectContext = PersistenceController.shared.viewContext
 
     static func all() -> [StockEntry] {
         let request = StockEntryEntity.fetchRequest()
