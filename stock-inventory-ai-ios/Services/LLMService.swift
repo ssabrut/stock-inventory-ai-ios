@@ -27,7 +27,7 @@ final class LLMService {
     private(set) var state: State = .idle
 
     private var modelContainer: ModelContainer?
-    private let modelId = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+    private let modelId = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
     private let toolRegistry = ToolRegistry()
 
     /// Persists downloaded model weights to Documents instead of Caches, so the
@@ -214,6 +214,91 @@ final class LLMService {
             // cap; fall back to its raw text rather than executing it.
             return finalRaw
         }
+    }
+
+    /// Single-call variant of `agenticReply` for the free-N add-stock voice
+    /// loop: `prompt` (built by the caller) tells the model it may reply
+    /// `{"done": true}` when the user's utterance means they're finished
+    /// adding items, in addition to the normal add_stock tool-call/answer
+    /// forms. Folding the done-check into the same generate call that
+    /// parses the item — instead of a separate dedicated classify call
+    /// before it — halves the number of on-device generations per loop
+    /// turn, which matters because MLX keeps the model weights and KV cache
+    /// resident for the whole Siri session: more generate calls per turn
+    /// means more peak memory held for longer, and this app was hitting
+    /// iOS's memory limit on multi-item add sessions before this merge.
+    ///
+    /// Returns `nil` for the "done" case (distinct from `AgentResponse`,
+    /// which has no case for it) so the caller can end its loop without
+    /// threading a done flag through every `AgentResponse` case elsewhere
+    /// (`resolveConfirmedToolCall`, `resolvePriceReply`, ...) that never
+    /// needs it.
+    func agenticReplyOrDone(to prompt: String) async throws -> AgentResponse? {
+        let firstRaw = try await generate(
+            chat: [.system(systemPrompt), .user(prompt)],
+            temperature: 0.6
+        )
+        #if DEBUG
+        print("[LLMService] agenticReplyOrDone prompt: \(prompt)\n[LLMService] raw: \(firstRaw)")
+        #endif
+
+        if Self.isDoneSignal(firstRaw) {
+            return nil
+        }
+
+        switch toolRegistry.parseReply(firstRaw) {
+        case .answer(let text):
+            return .answer(text)
+
+        case .toolCall(let call):
+            guard let tool = toolRegistry.tool(named: call.name) else {
+                return .answer(toolRegistry.execute(call))
+            }
+
+            if tool.needsPrice(arguments: call.arguments) {
+                return .needsPrice(call: call)
+            }
+
+            if tool.isMutating {
+                return .needsConfirmation(call: call, summary: tool.confirmationSummary(arguments: call.arguments))
+            }
+
+            return .answer(try await finalAnswer(prompt: prompt, firstRaw: firstRaw, call: call))
+        }
+    }
+
+    /// `{"done": true}` reads as neither `answer` nor `tool` to
+    /// `ToolRegistry.parseReply`, so it already falls through to
+    /// `.answer(raw trimmed)` — this just recognizes that specific shape
+    /// before `agenticReplyOrDone` hands the rest off to the normal parse.
+    private static func isDoneSignal(_ raw: String) -> Bool {
+        guard let jsonString = extractJSONObject(from: raw),
+              let data = jsonString.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return (object["done"] as? Bool) == true
+    }
+
+    /// Scans for the first balanced `{...}` span, same approach as
+    /// `ToolRegistry.extractJSONObject` — small models sometimes wrap a
+    /// reply in stray text or code fences instead of bare JSON.
+    private static func extractJSONObject(from text: String) -> String? {
+        guard let start = text.firstIndex(of: "{") else { return nil }
+
+        var depth = 0
+        var index = start
+        while index < text.endIndex {
+            let char = text[index]
+            if char == "{" { depth += 1 }
+            if char == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return String(text[start...index])
+                }
+            }
+            index = text.index(after: index)
+        }
+        return nil
     }
 
     private func jsonString(from arguments: [String: Any]) -> String {
