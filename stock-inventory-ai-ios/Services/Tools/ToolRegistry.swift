@@ -31,7 +31,10 @@ struct ToolCall {
 final class ToolRegistry {
     private(set) var tools: [AgentTool]
 
-    init(tools: [AgentTool] = [GetStockTool(), AddStockTool(), UpdateStockTool(), DeleteStockTool()]) {
+    init(tools: [AgentTool] = [
+        GetStockTool(), AddStockTool(), UpdateStockTool(), DeleteStockTool(),
+        GetMenuTool(), AddMenuTool(), UpdateMenuTool(), DeleteMenuTool()
+    ]) {
         self.tools = tools
     }
 

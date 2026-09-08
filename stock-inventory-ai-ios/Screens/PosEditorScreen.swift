@@ -239,7 +239,7 @@ private struct MenuItemEditorSheet: View {
 
     @State private var name: String
     @State private var priceText: String
-    @State private var category: String
+    @State private var category: MenuCategory
     @State private var icon: String
 
     init(item: MenuItem?, onSave: @escaping (MenuItem) -> Void) {
@@ -247,7 +247,7 @@ private struct MenuItemEditorSheet: View {
         self.onSave = onSave
         _name = State(initialValue: item?.name ?? "")
         _priceText = State(initialValue: item.map { String(Int($0.price)) } ?? "")
-        _category = State(initialValue: item?.category ?? "")
+        _category = State(initialValue: item.flatMap { MenuCategory(looselyMatching: $0.category) } ?? .makanan)
         _icon = State(initialValue: item?.icon ?? "fork.knife")
     }
 
@@ -258,7 +258,11 @@ private struct MenuItemEditorSheet: View {
                     TextField("Nama menu", text: $name)
                     TextField("Harga", text: $priceText)
                         .keyboardType(.numberPad)
-                    TextField("Kategori", text: $category)
+                    Picker("Kategori", selection: $category) {
+                        ForEach(MenuCategory.allCases, id: \.self) { category in
+                            Text(category.rawValue).tag(category)
+                        }
+                    }
                 }
             }
             .navigationTitle(item == nil ? "Tambah Menu" : "Edit Menu")
@@ -274,7 +278,7 @@ private struct MenuItemEditorSheet: View {
                             id: item?.id ?? UUID(),
                             name: name,
                             price: price,
-                            category: category,
+                            category: category.rawValue,
                             icon: icon
                         )
                         onSave(saved)

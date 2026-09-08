@@ -5,6 +5,22 @@
 
 import Foundation
 
+/// POS menu is split into exactly these two categories — no free-text
+/// categories, so tools and UI both stay closed to this set.
+enum MenuCategory: String, CaseIterable, Codable {
+    case makanan = "Makanan"
+    case minuman = "Minuman"
+
+    /// Case-insensitive match against LLM/user-typed text, e.g. "minuman" or
+    /// "MAKANAN", falling back to nil for anything outside the two values.
+    init?(looselyMatching raw: String) {
+        guard let match = MenuCategory.allCases.first(where: { $0.rawValue.caseInsensitiveCompare(raw) == .orderedSame }) else {
+            return nil
+        }
+        self = match
+    }
+}
+
 struct MenuItem: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
