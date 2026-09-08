@@ -43,10 +43,13 @@ enum StockAction: String, AppEnum {
 /// All LLM-based parsing/tool-calling (LLMService, ToolRegistry,
 /// AddStockTool, StockPhraseParser) has been removed from this intent.
 /// `addStock` is now a pure transcript collector: it loops asking for the
-/// next item and shows each raw Siri transcription back in a snippet, with
-/// no parsing into name/quantity/price and no StockStore write — a
-/// placeholder for whatever replaces the LLM parse step. `updateStock`/
-/// `deleteStock`/`ask` remain disabled, since they had no non-LLM path.
+/// next item, confirms each raw Siri transcription with a spoken "Is that
+/// correct?" yes/no (see `confirmTranscript` — a "No" lets the user
+/// re-speak the item rather than losing it), then shows the whole
+/// accumulated list in a final snippet. No parsing into name/quantity/price
+/// and no StockStore write yet — a placeholder for whatever replaces the
+/// LLM parse step. `updateStock`/`deleteStock`/`ask` remain disabled, since
+/// they had no non-LLM path.
 ///
 /// `openAppWhenRun` is false: with the LLM gone there's no GPU-bound work
 /// left in this intent (that was the only reason it used to force the app
@@ -64,6 +67,13 @@ struct StockAgentIntent: AppIntent {
     /// no further detail to run.
     @Parameter(title: "Details")
     var detailPhrase: String?
+
+    /// Backing parameter for the per-item "Is that correct?" yes/no in
+    /// `confirmTranscript` — kept separate from `detailPhrase` since both
+    /// are live across the same loop iteration (the disambiguation answer
+    /// and the free-text item phrase are conceptually different things).
+    @Parameter(title: "Confirm")
+    var confirmChoice: String?
 
     init() {
         self.action = .ask
@@ -86,6 +96,7 @@ struct StockAgentIntent: AppIntent {
     static var parameterSummary: some ParameterSummary {
         Summary("\(\.$action) in Invent") {
             \.$detailPhrase
+            \.$confirmChoice
         }
     }
 
@@ -164,38 +175,48 @@ struct StockAgentIntent: AppIntent {
         return transcripts
     }
 
-    /// Shows `phrase` in a snippet with "Is that correct?" and a yes/no —
-    /// `requestConfirmation` itself has no "No" return value (it throws on
-    /// decline/cancel, and Apple's own guidance is to let that terminate
-    /// `perform()`), so the throw is deliberately caught here and treated
-    /// as "No" instead: the user re-speaks the item (name + quantity), and
-    /// the same check runs again on the corrected phrase, recursing until
-    /// something is accepted. Returns `nil` if the user says a stop word
-    /// (see `isDoneWord`) while re-speaking — `collectTranscripts`'s outer
-    /// loop only checks for that on its own initial ask, so this step needs
-    /// its own check to let "done" end the session mid-correction too,
-    /// rather than being swallowed as a literal item name.
-    private func confirmTranscript(_ phrase: String, itemNumber: Int) async throws -> String? {
-        do {
-            try await requestConfirmation(
-                actionName: .continue,
-                snippetIntent: TranscriptItemSnippetIntent(transcript: phrase, itemNumber: itemNumber)
-            )
-            return phrase
-        } catch {
-            #if DEBUG
-            print("[StockAgentIntent] item \(itemNumber) rejected: \"\(phrase)\" — asking user to re-speak")
-            #endif
-            let corrected = try await $detailPhrase.requestValue(
-                IntentDialog(stringLiteral: "Sorry — please say the correct item name and quantity, or say \"done\" to stop.")
-            )
-            detailPhrase = nil
+    private static let yesChoice = "Yes, that's correct"
+    private static let noChoice = "No, let me fix it"
 
-            if Self.isDoneWord(corrected) {
-                return nil
-            }
-            return try await confirmTranscript(corrected, itemNumber: itemNumber)
+    /// Asks "<transcript>. Is that correct?" with an explicit Yes/No choice
+    /// via `requestDisambiguation` — deliberately *not*
+    /// `requestConfirmation`, which was tried here first: its decline path
+    /// throws an error that Apple's own docs say "shouldn't be caught," and
+    /// in practice that throw tears down the whole intent rather than
+    /// something `do/catch` inside `perform()` gets a chance to intercept,
+    /// so a "No" ended the entire add session instead of letting the user
+    /// correct one item. `requestDisambiguation` returns the chosen string
+    /// as a normal value with no special throw/cancel semantics, so "No"
+    /// here reliably loops back to re-asking instead.
+    ///
+    /// Returns `nil` if the user says a stop word (see `isDoneWord`) while
+    /// re-speaking after a "No" — `collectTranscripts`'s outer loop only
+    /// checks for that on its own initial ask, so this step needs its own
+    /// check to let "done" end the session mid-correction too, rather than
+    /// being swallowed as a literal item name.
+    private func confirmTranscript(_ phrase: String, itemNumber: Int) async throws -> String? {
+        confirmChoice = nil
+        let choice = try await $confirmChoice.requestDisambiguation(
+            among: [Self.yesChoice, Self.noChoice],
+            dialog: IntentDialog(stringLiteral: "Item \(itemNumber): \(phrase). Is that correct?")
+        )
+
+        guard choice == Self.noChoice else {
+            return phrase
         }
+
+        #if DEBUG
+        print("[StockAgentIntent] item \(itemNumber) rejected: \"\(phrase)\" — asking user to re-speak")
+        #endif
+        let corrected = try await $detailPhrase.requestValue(
+            IntentDialog(stringLiteral: "Sorry — please say the correct item name and quantity, or say \"done\" to stop.")
+        )
+        detailPhrase = nil
+
+        if Self.isDoneWord(corrected) {
+            return nil
+        }
+        return try await confirmTranscript(corrected, itemNumber: itemNumber)
     }
 
     /// Spoken summary for checkStock, built from the same `entries` snapshot
@@ -206,58 +227,6 @@ struct StockAgentIntent: AppIntent {
         return entries
             .map { "\($0.itemName): \(formatQuantity($0.quantity)) \($0.unit)" }
             .joined(separator: "\n")
-    }
-}
-
-/// Per-item confirm step in the transcript-collection loop (see
-/// `StockAgentIntent.confirmTranscript`), shown via
-/// `requestConfirmation(actionName:snippetIntent:)` so the raw transcribed
-/// text is visible in the Siri snippet alongside "Is that correct?", not
-/// just spoken. Declining/cancelling is caught by the caller and treated as
-/// "No" — it re-asks the user to re-speak the item rather than letting the
-/// throw abort the whole loop.
-struct TranscriptItemSnippetIntent: SnippetIntent {
-    static let title: LocalizedStringResource = "Confirm Item"
-    static let isDiscoverable: Bool = false
-
-    @Parameter var transcript: String
-    @Parameter var itemNumber: Int
-
-    init() {
-        transcript = ""
-        itemNumber = 0
-    }
-
-    init(transcript: String, itemNumber: Int) {
-        self.transcript = transcript
-        self.itemNumber = itemNumber
-    }
-
-    func perform() async throws -> some IntentResult & ShowsSnippetView {
-        .result(view: TranscriptItemSnippetView(transcript: transcript, itemNumber: itemNumber))
-    }
-}
-
-struct TranscriptItemSnippetView: View {
-    let transcript: String
-    let itemNumber: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Item \(itemNumber)", systemImage: "waveform")
-                .font(.headline)
-
-            Text(transcript)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.leading)
-
-            Text("Is that correct?")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
     }
 }
 
