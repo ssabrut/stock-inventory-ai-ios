@@ -16,8 +16,8 @@ import SwiftUI
 enum StockAction: String, AppEnum {
     /// No pinned action — the generic "Ask Invent" entry point. Currently
     /// disabled (see `StockAgentIntent`'s doc comment) along with
-    /// updateStock/deleteStock, since all LLM-routed handling has been
-    /// removed.
+    /// updateStock/deleteStock — only addStock/checkStock have a working
+    /// flow right now.
     case ask
     case checkStock
     case addStock
@@ -40,40 +40,57 @@ enum StockAction: String, AppEnum {
 /// Invent" is one turn end-to-end — checkStock needs no further detail and
 /// runs immediately against StockStore.
 ///
-/// All LLM-based parsing/tool-calling (LLMService, ToolRegistry,
-/// AddStockTool, StockPhraseParser) has been removed from this intent.
-/// `addStock` is now a pure transcript collector: it loops asking for the
-/// next item, confirms each raw Siri transcription with a spoken "Is that
-/// correct?" yes/no (see `confirmTranscript` — a "No" lets the user
-/// re-speak the item rather than losing it), then shows the whole
-/// accumulated list in a final snippet. No parsing into name/quantity/price
-/// and no StockStore write yet — a placeholder for whatever replaces the
-/// LLM parse step. `updateStock`/`deleteStock`/`ask` remain disabled, since
-/// they had no non-LLM path.
+/// `addStock` collects items transcript-first, with no LLM involved until
+/// the user has confirmed the whole batch:
+/// 1. `collectTranscripts` loops asking for the next item, confirming each
+///    raw Siri transcription with a spoken "Is that correct?" yes/no (see
+///    `confirmTranscript` — a "No" lets the user re-speak the item rather
+///    than losing it, "done" ends the loop).
+/// 2. The whole accumulated list is shown in a summary snippet
+///    (`TranscriptSnippetView`) with one final "Add all these?" yes/no gate
+///    (see `confirmBatch`) — declining cancels the entire session with
+///    nothing written.
+/// 3. Only on "yes" does `parseAndAddItems` run each transcript through
+///    `LLMService.agenticReply` (same JSON tool-call contract ChatScreen
+///    uses) to extract name/quantity/unit/price, fill in whatever the
+///    parse left missing with a targeted follow-up, then write via
+///    `AddStockTool` (StockStore/Core Data).
 ///
-/// `openAppWhenRun` is false: with the LLM gone there's no GPU-bound work
-/// left in this intent (that was the only reason it used to force the app
-/// to the foreground — MLX/Metal inference can't reliably run in a
-/// background App Intent context), so it can run like checkStock does.
+/// `updateStock`/`deleteStock`/`ask` remain disabled — they had no
+/// transcript-first equivalent built yet.
+///
+/// `openAppWhenRun` is true: MLX's on-device inference runs on the GPU via
+/// Metal, which a background App Intent execution context can't reliably
+/// host — iOS reclaims GPU access from a non-foreground process
+/// mid-inference, which crashed here previously
+/// (IOGPUCommandQueueSubmitCommandBuffers / iokit_user_client_trap).
+/// Foregrounding the app gives `agenticReply` a normal process to run in,
+/// same as ChatScreen. checkStock has no LLM step, so it stays fast even
+/// though the intent as a whole opens the app for addStock's parse step.
 struct StockAgentIntent: AppIntent {
     static var title: LocalizedStringResource = "Ask Invent"
     static var description = IntentDescription("Check or add stock by voice.")
-    static var openAppWhenRun = false
+    static var openAppWhenRun = true
 
     @Parameter(title: "Action")
     var action: StockAction
 
     /// Free-text detail for addStock — unused for checkStock, which needs
-    /// no further detail to run.
+    /// no further detail to run. Also carries the per-item "Is that
+    /// correct?" reply in `confirmTranscript`, classified as yes/no by
+    /// `YesNoClassifier` rather than a dedicated disambiguation parameter —
+    /// see that method's doc comment for why.
     @Parameter(title: "Details")
     var detailPhrase: String?
 
-    /// Backing parameter for the per-item "Is that correct?" yes/no in
-    /// `confirmTranscript` — kept separate from `detailPhrase` since both
-    /// are live across the same loop iteration (the disambiguation answer
-    /// and the free-text item phrase are conceptually different things).
-    @Parameter(title: "Confirm")
-    var confirmChoice: String?
+    /// Bare-number reply to "what's the price?" when `AddStockTool` is
+    /// missing one and has no fallback (see LLMService.resolvePriceReply)
+    /// — a separate turn since the model has no memory of the original
+    /// call across it.
+    @Parameter(title: "What's the price?")
+    var priceReply: String?
+
+    private let llm = LLMService()
 
     init() {
         self.action = .ask
@@ -96,7 +113,7 @@ struct StockAgentIntent: AppIntent {
     static var parameterSummary: some ParameterSummary {
         Summary("\(\.$action) in Invent") {
             \.$detailPhrase
-            \.$confirmChoice
+            \.$priceReply
         }
     }
 
@@ -111,8 +128,23 @@ struct StockAgentIntent: AppIntent {
 
         if action == .addStock {
             let transcripts = try await collectTranscripts()
+            guard !transcripts.isEmpty else {
+                return .result(
+                    dialog: IntentDialog(stringLiteral: "Okay, no items added."),
+                    view: TranscriptSnippetView(transcripts: [])
+                )
+            }
+
+            guard try await confirmBatch(transcripts) else {
+                return .result(
+                    dialog: IntentDialog(stringLiteral: "Okay, cancelled. Nothing was added."),
+                    view: TranscriptSnippetView(transcripts: transcripts)
+                )
+            }
+
+            let resultText = try await parseAndAddItems(transcripts)
             return .result(
-                dialog: IntentDialog(stringLiteral: "Got \(transcripts.count) item\(transcripts.count == 1 ? "" : "s")."),
+                dialog: IntentDialog(stringLiteral: resultText),
                 view: TranscriptSnippetView(transcripts: transcripts)
             )
         }
@@ -175,25 +207,16 @@ struct StockAgentIntent: AppIntent {
         return transcripts
     }
 
-    // Plain, punctuation-free choice strings — "Yes, that's correct"
-    // (with the apostrophe) reliably hung at the requestDisambiguation
-    // await below when spoken in full, while "No, let me fix it" resolved
-    // fine; that's the one asymmetry between the two original strings, so
-    // apostrophes/contractions are the suspected cause until proven
-    // otherwise.
-    private static let yesChoice = "Yes correct"
-    private static let noChoice = "No fix it"
-
-    /// Asks "<transcript>. Is that correct?" with an explicit Yes/No choice
-    /// via `requestDisambiguation` — deliberately *not*
-    /// `requestConfirmation`, which was tried here first: its decline path
-    /// throws an error that Apple's own docs say "shouldn't be caught," and
-    /// in practice that throw tears down the whole intent rather than
-    /// something `do/catch` inside `perform()` gets a chance to intercept,
-    /// so a "No" ended the entire add session instead of letting the user
-    /// correct one item. `requestDisambiguation` returns the chosen string
-    /// as a normal value with no special throw/cancel semantics, so "No"
-    /// here reliably loops back to re-asking instead.
+    /// Asks "<transcript>. Is that correct?" and classifies the free-text
+    /// reply as yes/no via `YesNoClassifier` (on-device sentence embeddings,
+    /// no LLM) instead of `requestDisambiguation`'s exact/fuzzy string
+    /// matching — that approach was tried first and reliably hung on
+    /// `requestDisambiguation`'s await when the user spoke a full natural
+    /// phrase ("yes, that's correct") instead of the literal choice text;
+    /// `requestValue` (free text) always resolves regardless of phrasing,
+    /// so classification moves into our own code where we control the
+    /// matching. An ambiguous reply (neither classified confidently) is
+    /// treated as "no" and re-asked, rather than silently guessing.
     ///
     /// Returns `nil` if the user says a stop word (see `isDoneWord`) while
     /// re-speaking after a "No" — `collectTranscripts`'s outer loop only
@@ -201,18 +224,24 @@ struct StockAgentIntent: AppIntent {
     /// check to let "done" end the session mid-correction too, rather than
     /// being swallowed as a literal item name.
     private func confirmTranscript(_ phrase: String, itemNumber: Int) async throws -> String? {
-        confirmChoice = nil
-        let choice = try await $confirmChoice.requestDisambiguation(
-            among: [Self.yesChoice, Self.noChoice],
-            dialog: IntentDialog(stringLiteral: "Item \(itemNumber): \(phrase). Is that correct?")
+        let reply = try await $detailPhrase.requestValue(
+            IntentDialog(stringLiteral: "Item \(itemNumber): \(phrase). Is that correct?")
         )
+        detailPhrase = nil
+        let classification = YesNoClassifier.classify(reply)
+        #if DEBUG
+        print("[StockAgentIntent] confirm reply: \"\(reply)\" — classified as \(classification)")
+        #endif
 
-        guard choice == Self.noChoice else {
+        // Accept only on a confident .yes — .no and .unclear both fall
+        // through to re-ask, since an unclassifiable reply shouldn't
+        // silently accept a possibly-misheard item.
+        guard classification != .yes else {
             return phrase
         }
 
         #if DEBUG
-        print("[StockAgentIntent] item \(itemNumber) rejected: \"\(phrase)\" — asking user to re-speak")
+        print("[StockAgentIntent] item \(itemNumber) rejected: \"\(phrase)\" (reply classified \(classification)) — asking user to re-speak")
         #endif
         let corrected = try await $detailPhrase.requestValue(
             IntentDialog(stringLiteral: "Sorry — please say the correct item name and quantity, or say \"done\" to stop.")
@@ -223,6 +252,109 @@ struct StockAgentIntent: AppIntent {
             return nil
         }
         return try await confirmTranscript(corrected, itemNumber: itemNumber)
+    }
+
+    /// Final batch-wide gate shown alongside the summary snippet: "here's
+    /// everything I heard — add all these?" A "No"/unclear reply cancels
+    /// the whole session with nothing written, matching the "no = cancel
+    /// all" requirement — this runs before any LLM call, so declining here
+    /// costs nothing beyond the transcript-collection turns already spent.
+    /// Classification uses the same `YesNoClassifier` + `requestValue`
+    /// pattern as `confirmTranscript`, for the same reason: a
+    /// `requestDisambiguation` yes/no reliably hung on natural phrasing.
+    private func confirmBatch(_ transcripts: [String]) async throws -> Bool {
+        let listText = transcripts.enumerated().map { "\($0 + 1). \($1)" }.joined(separator: ", ")
+        let reply = try await $detailPhrase.requestValue(
+            IntentDialog(stringLiteral: "Here's what I heard: \(listText). Add all \(transcripts.count) of these?")
+        )
+        detailPhrase = nil
+        let classification = YesNoClassifier.classify(reply)
+        #if DEBUG
+        print("[StockAgentIntent] confirmBatch reply: \"\(reply)\" — classified as \(classification)")
+        #endif
+        return classification == .yes
+    }
+
+    /// Runs each confirmed transcript through `LLMService.agenticReply`
+    /// (same JSON tool-call contract ChatScreen uses) to parse it into an
+    /// add_stock call, fills in whatever the parse left missing with a
+    /// targeted follow-up (mirrors the old pre-transcript-collector
+    /// addStock flow), then writes via `AddStockTool` — this is the only
+    /// point in the whole addStock flow that touches the LLM or
+    /// StockStore, since the batch has already been confirmed once as a
+    /// whole in `confirmBatch`.
+    private func parseAndAddItems(_ transcripts: [String]) async throws -> String {
+        var results: [String] = []
+
+        for (index, transcript) in transcripts.enumerated() {
+            let ordinal = index + 1
+            #if DEBUG
+            print("[StockAgentIntent] parseAndAddItems parsing item \(ordinal): \"\(transcript)\"")
+            #endif
+
+            // Framing it explicitly as an add request makes the intent
+            // unambiguous — the bare utterance alone ("5kg of white
+            // pepper") reads as ambiguous to a small model without a verb.
+            let response = try await llm.agenticReply(to: "Add \(transcript) to inventory.")
+
+            guard var call = Self.addStockCall(from: response) else {
+                results.append("Sorry, I couldn't understand \"\(transcript)\" — it wasn't added.")
+                continue
+            }
+
+            if (call.arguments["itemName"] as? String)?.trimmingCharacters(in: .whitespaces).isEmpty ?? true {
+                let name = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: "What's the name of item \(ordinal)?"))
+                detailPhrase = nil
+                call = call.addingArgument(name, forKey: "itemName")
+            }
+
+            if (call.arguments["quantity"] as? NSNumber)?.doubleValue == nil {
+                let amountPhrase = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: "How much, and what unit, for item \(ordinal)?"))
+                detailPhrase = nil
+                let parsed = StockPhraseParser.parse(amountPhrase)
+                call = call.addingArgument(parsed.quantity, forKey: "quantity")
+                call = call.addingArgument(parsed.unit, forKey: "unit")
+            } else if (call.arguments["unit"] as? String)?.isEmpty ?? true {
+                let unitPhrase = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: "What unit — kilograms, grams, pieces?"))
+                detailPhrase = nil
+                call = call.addingArgument(StockPhraseParser.canonicalUnit(unitPhrase), forKey: "unit")
+            }
+
+            let tool = AddStockTool()
+            if tool.needsPrice(arguments: call.arguments) {
+                let reply = try await $priceReply.requestValue(IntentDialog(stringLiteral: "What's the price for item \(ordinal)?"))
+                priceReply = nil
+                guard case .needsConfirmation(let priced, _) = llm.resolvePriceReply(reply, call: call) else {
+                    results.append("Sorry, I didn't catch a price for \"\(transcript)\" — it wasn't added.")
+                    continue
+                }
+                call = priced
+            }
+
+            do {
+                results.append(try tool.call(arguments: call.arguments))
+            } catch let error as AgentToolError {
+                results.append(error.message)
+            } catch {
+                results.append("Sorry, something went wrong adding \"\(transcript)\".")
+            }
+        }
+
+        return results.joined(separator: " ")
+    }
+
+    /// Extracts a `ToolCall` to work with regardless of which `AgentResponse`
+    /// case the model produced — `.needsConfirmation`/`.needsPrice` already
+    /// carry one; `.answer` (the model didn't call add_stock at all, e.g. an
+    /// empty or nonsense transcript) has none, so the caller reports that
+    /// item as unparseable rather than guessing.
+    private static func addStockCall(from response: LLMService.AgentResponse) -> ToolCall? {
+        switch response {
+        case .answer:
+            return nil
+        case .needsPrice(let call), .needsConfirmation(let call, _):
+            return call
+        }
     }
 
     /// Spoken summary for checkStock, built from the same `entries` snapshot
@@ -299,6 +431,7 @@ struct StockSnippetView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
     }
 }
