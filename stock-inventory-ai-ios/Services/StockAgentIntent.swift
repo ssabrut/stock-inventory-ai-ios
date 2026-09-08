@@ -126,9 +126,9 @@ struct StockAgentIntent: AppIntent {
     /// done" and appending each raw Siri transcription to the list until the
     /// user's reply matches a stop word (see `isDoneWord`) — no LLM parsing,
     /// no StockStore write, just the transcribed text collected for display.
-    /// Each item is echoed back in its own confirmation snippet
-    /// (`TranscriptItemSnippetIntent`) as soon as it's collected, so the
-    /// user can see exactly what Siri heard before moving to the next one.
+    /// Each item goes through `confirmTranscript` before being added, so a
+    /// misheard item gets corrected on the spot rather than carried through
+    /// to the final list.
     private func collectTranscripts() async throws -> [String] {
         var transcripts: [String] = []
         var askPrompt = "What's the first item? Say the name and quantity, or say \"done\" if you're finished."
@@ -147,19 +147,55 @@ struct StockAgentIntent: AppIntent {
                 break
             }
 
-            transcripts.append(phrase)
+            guard let confirmed = try await confirmTranscript(phrase, itemNumber: transcripts.count + 1) else {
+                #if DEBUG
+                print("[StockAgentIntent] collectTranscripts finished (done said during correction) — total items collected: \(transcripts.count)")
+                #endif
+                break
+            }
+            transcripts.append(confirmed)
             #if DEBUG
-            print("[StockAgentIntent] collectTranscripts collected item \(transcripts.count): \"\(phrase)\"")
+            print("[StockAgentIntent] collectTranscripts collected item \(transcripts.count): \"\(confirmed)\"")
             #endif
 
-            try? await requestConfirmation(
-                actionName: .continue,
-                snippetIntent: TranscriptItemSnippetIntent(transcript: phrase, itemNumber: transcripts.count)
-            )
             askPrompt = "Got it. What's the next item, or say \"done\"?"
         }
 
         return transcripts
+    }
+
+    /// Shows `phrase` in a snippet with "Is that correct?" and a yes/no —
+    /// `requestConfirmation` itself has no "No" return value (it throws on
+    /// decline/cancel, and Apple's own guidance is to let that terminate
+    /// `perform()`), so the throw is deliberately caught here and treated
+    /// as "No" instead: the user re-speaks the item (name + quantity), and
+    /// the same check runs again on the corrected phrase, recursing until
+    /// something is accepted. Returns `nil` if the user says a stop word
+    /// (see `isDoneWord`) while re-speaking — `collectTranscripts`'s outer
+    /// loop only checks for that on its own initial ask, so this step needs
+    /// its own check to let "done" end the session mid-correction too,
+    /// rather than being swallowed as a literal item name.
+    private func confirmTranscript(_ phrase: String, itemNumber: Int) async throws -> String? {
+        do {
+            try await requestConfirmation(
+                actionName: .continue,
+                snippetIntent: TranscriptItemSnippetIntent(transcript: phrase, itemNumber: itemNumber)
+            )
+            return phrase
+        } catch {
+            #if DEBUG
+            print("[StockAgentIntent] item \(itemNumber) rejected: \"\(phrase)\" — asking user to re-speak")
+            #endif
+            let corrected = try await $detailPhrase.requestValue(
+                IntentDialog(stringLiteral: "Sorry — please say the correct item name and quantity, or say \"done\" to stop.")
+            )
+            detailPhrase = nil
+
+            if Self.isDoneWord(corrected) {
+                return nil
+            }
+            return try await confirmTranscript(corrected, itemNumber: itemNumber)
+        }
     }
 
     /// Spoken summary for checkStock, built from the same `entries` snapshot
@@ -173,15 +209,15 @@ struct StockAgentIntent: AppIntent {
     }
 }
 
-/// Per-item confirm step in the transcript-collection loop
-/// (`StockAgentIntent.collectTranscripts`), shown via
+/// Per-item confirm step in the transcript-collection loop (see
+/// `StockAgentIntent.confirmTranscript`), shown via
 /// `requestConfirmation(actionName:snippetIntent:)` so the raw transcribed
-/// text is visible in the Siri snippet, not just spoken. Declining/
-/// cancelling this step is caught (`try?` at the call site) rather than
-/// propagated — it's a pure acknowledgement of what was heard, not a
-/// decision that should be able to abort the loop.
+/// text is visible in the Siri snippet alongside "Is that correct?", not
+/// just spoken. Declining/cancelling is caught by the caller and treated as
+/// "No" — it re-asks the user to re-speak the item rather than letting the
+/// throw abort the whole loop.
 struct TranscriptItemSnippetIntent: SnippetIntent {
-    static let title: LocalizedStringResource = "Item Heard"
+    static let title: LocalizedStringResource = "Confirm Item"
     static let isDiscoverable: Bool = false
 
     @Parameter var transcript: String
@@ -208,13 +244,19 @@ struct TranscriptItemSnippetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Item \(itemNumber) Heard", systemImage: "waveform")
+            Label("Item \(itemNumber)", systemImage: "waveform")
                 .font(.headline)
 
             Text(transcript)
                 .font(.title3)
                 .fontWeight(.semibold)
+                .multilineTextAlignment(.leading)
+
+            Text("Is that correct?")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
     }
 }
@@ -238,9 +280,11 @@ struct TranscriptSnippetView: View {
                 ForEach(Array(transcripts.enumerated()), id: \.offset) { index, transcript in
                     Text("\(index + 1). \(transcript)")
                         .font(.subheadline)
+                        .multilineTextAlignment(.leading)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
     }
 }
