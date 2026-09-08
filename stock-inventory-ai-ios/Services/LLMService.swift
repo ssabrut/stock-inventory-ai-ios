@@ -121,6 +121,9 @@ final class LLMService {
             chat: [.system(systemPrompt), .user(prompt)],
             temperature: 0.6
         )
+        #if DEBUG
+        print("[LLMService] prompt: \(prompt)\n[LLMService] raw: \(firstRaw)")
+        #endif
 
         switch toolRegistry.parseReply(firstRaw) {
         case .answer(let text):
@@ -234,9 +237,15 @@ final class LLMService {
         return try await modelContainer.perform { context in
             let input = try await context.processor.prepare(input: .init(chat: chat))
             var output = ""
+            // maxTokens/maxKVSize bound how much memory one generation can
+            // grow to — every reply here is meant to be short (a JSON tool
+            // call or a brief spoken/chat answer, per the system prompt), so
+            // there's no normal case that needs more than this, and leaving
+            // both unbounded let memory climb enough under Siri's tighter
+            // per-invocation ceiling to crash on repeated use.
             let stream = try MLXLMCommon.generate(
                 input: input,
-                parameters: GenerateParameters(temperature: temperature),
+                parameters: GenerateParameters(maxTokens: 512, maxKVSize: 1024, temperature: temperature),
                 context: context
             )
             for try await item in stream {
