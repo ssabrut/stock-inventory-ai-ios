@@ -198,8 +198,11 @@ struct StockAppShortcuts: AppShortcutsProvider {
             phrases: [
                 "\(.applicationName) check stock",
                 "Check stock in \(.applicationName)",
+                "Check stock on \(.applicationName)",
                 "Check my stock in \(.applicationName)",
-                "How much stock do I have in \(.applicationName)"
+                "Check my stock on \(.applicationName)",
+                "How much stock do I have in \(.applicationName)",
+                "How much stock do I have on \(.applicationName)"
             ],
             shortTitle: "Check Stock",
             systemImageName: "shippingbox.fill"
@@ -209,8 +212,10 @@ struct StockAppShortcuts: AppShortcutsProvider {
             phrases: [
                 "\(.applicationName) add stock",
                 "Add stock in \(.applicationName)",
+                "Add stock on \(.applicationName)",
                 "Add stock using \(.applicationName)",
-                "I want to add stock in \(.applicationName)"
+                "I want to add stock in \(.applicationName)",
+                "I want to add stock on \(.applicationName)"
             ],
             shortTitle: "Add Stock",
             systemImageName: "shippingbox.fill"
@@ -219,7 +224,8 @@ struct StockAppShortcuts: AppShortcutsProvider {
             intent: StockAgentIntent(action: .updateStock),
             phrases: [
                 "\(.applicationName) update stock",
-                "Update stock in \(.applicationName)"
+                "Update stock in \(.applicationName)",
+                "Update stock on \(.applicationName)"
             ],
             shortTitle: "Update Stock",
             systemImageName: "shippingbox.fill"
@@ -228,7 +234,8 @@ struct StockAppShortcuts: AppShortcutsProvider {
             intent: StockAgentIntent(action: .deleteStock),
             phrases: [
                 "\(.applicationName) delete stock",
-                "Delete stock in \(.applicationName)"
+                "Delete stock in \(.applicationName)",
+                "Delete stock on \(.applicationName)"
             ],
             shortTitle: "Delete Stock",
             systemImageName: "shippingbox.fill"
