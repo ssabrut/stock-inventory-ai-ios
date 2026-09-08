@@ -16,28 +16,24 @@ struct ContentView: View {
     var body: some View {
         Group {
             if hasLoadedOnce || didSkipModelLoad {
-                ZStack {
-                    HStack(spacing: 0) {
-                        SidebarView(selection: $selection)
+                HStack(spacing: 0) {
+                    SidebarView(selection: $selection)
 
-                        Group {
-                            switch selection {
-                            case .posEditor:
-                                PosEditorScreen()
-                            case .inventory:
-                                InventoryScreen()
-                            case .chat:
-                                ChatScreen(llm: llm)
-                            case .history:
-                                HistoryScreen()
-                            case .settings:
-                                SettingsScreen(llm: llm)
-                            }
+                    Group {
+                        switch selection {
+                        case .posEditor:
+                            PosEditorScreen()
+                        case .inventory:
+                            InventoryScreen()
+                        case .chat:
+                            ChatScreen(llm: llm)
+                        case .history:
+                            HistoryScreen()
+                        case .settings:
+                            SettingsScreen(llm: llm)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-
-                    StockSessionOverlay(llm: llm)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 SplashScreen(state: llm.state) {
