@@ -171,7 +171,13 @@ struct StockAgentIntent: AppIntent {
     /// no StockStore write, just the transcribed text collected for display.
     /// Each item goes through `confirmTranscript` before being added, so a
     /// misheard item gets corrected on the spot rather than carried through
-    /// to the final list.
+    /// to the final list. Once confirmed, `askPrice` appends "at <price>" to
+    /// that item's transcript right away — before moving on to the next
+    /// item — rather than deferring every item's price to a separate pass
+    /// after the whole batch is parsed. `parseAndAddItems`'s LLM call
+    /// extracts the price straight out of this combined text the same way
+    /// it extracts name/quantity, so its own price follow-up only fires as
+    /// a fallback if that extraction somehow still comes up empty.
     private func collectTranscripts() async throws -> [String] {
         var transcripts: [String] = []
         var askPrompt = "What's the first item? Say the name and quantity, or say \"done\" if you're finished."
@@ -196,15 +202,34 @@ struct StockAgentIntent: AppIntent {
                 #endif
                 break
             }
-            transcripts.append(confirmed)
+
+            let withPrice = try await askPrice(for: confirmed, itemNumber: transcripts.count + 1)
+            transcripts.append(withPrice)
             #if DEBUG
-            print("[StockAgentIntent] collectTranscripts collected item \(transcripts.count): \"\(confirmed)\"")
+            print("[StockAgentIntent] collectTranscripts collected item \(transcripts.count): \"\(withPrice)\"")
             #endif
 
             askPrompt = "Got it. What's the next item, or say \"done\"?"
         }
 
         return transcripts
+    }
+
+    /// Asks "What's the price for <item>?" and appends the reply to
+    /// `transcript` as "at <price>" — run right after each item is
+    /// confirmed in `collectTranscripts`, so by the time `parseAndAddItems`
+    /// sees this transcript it already reads like "5kg white pepper at
+    /// 30000", not just the bare item phrase. A bare non-numeric reply
+    /// (misheard, or the user has no price to give) is appended as-is
+    /// rather than dropped — `parseAndAddItems`'s LLM parse and its own
+    /// `needsPrice` fallback still get a chance to make sense of it or ask
+    /// again, same as before this change.
+    private func askPrice(for transcript: String, itemNumber: Int) async throws -> String {
+        let reply = try await $priceReply.requestValue(IntentDialog(stringLiteral: "What's the price for item \(itemNumber): \(transcript)?"))
+        priceReply = nil
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return transcript }
+        return "\(transcript) at \(trimmed)"
     }
 
     /// Asks "<transcript>. Is that correct?" and classifies the free-text
