@@ -173,22 +173,33 @@ final class LLMService {
     }
 
     private static let priceMultiplierAliases: [String: Double] = [
-        "ribu": 1_000, "rb": 1_000,
+        "ribu": 1_000, "rb": 1_000, "k": 1_000,
         "juta": 1_000_000, "jt": 1_000_000
     ]
 
-    private static func firstPriceNumber(in text: String) -> Double? {
-        let words = text.lowercased().split(separator: " ").map(String.init)
+    /// Matches a number immediately followed by an optional multiplier
+    /// suffix — fused with no space ("50k", "50rb", "50jt") or as a
+    /// separate word ("50 k", "150 ribu") — in one pass, so both forms
+    /// parse the same way instead of the fused case needing to be split
+    /// off before the old whitespace-based word scan could see it.
+    private static let priceRegex = try! NSRegularExpression(
+        pattern: #"(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?"#
+    )
 
-        guard let numberIndex = words.firstIndex(where: { Double($0) != nil }),
-              let number = Double(words[numberIndex])
+    private static func firstPriceNumber(in text: String) -> Double? {
+        let lowercased = text.lowercased()
+        let range = NSRange(lowercased.startIndex..., in: lowercased)
+
+        guard let match = priceRegex.firstMatch(in: lowercased, range: range),
+              let numberRange = Range(match.range(at: 1), in: lowercased),
+              let number = Double(lowercased[numberRange].replacingOccurrences(of: ",", with: "."))
         else { return nil }
 
-        if words.indices.contains(numberIndex + 1),
-           let multiplier = priceMultiplierAliases[words[numberIndex + 1]] {
-            return number * multiplier
-        }
-        return number
+        guard let suffixRange = Range(match.range(at: 2), in: lowercased),
+              let multiplier = priceMultiplierAliases[String(lowercased[suffixRange])]
+        else { return number }
+
+        return number * multiplier
     }
 
     private func finalAnswer(prompt: String, firstRaw: String, call: ToolCall) async throws -> String {
