@@ -78,8 +78,6 @@ struct AddStockIntent: AppIntent {
     private static let yesChoice = "Yes, that's correct"
     private static let noChoice = "No, something's wrong"
 
-    private let llm = LLMService()
-
     func perform() async throws -> some IntentResult & ShowsSnippetView & ProvidesDialog {
         let count = min(max(itemCount, 1), Self.maxItems)
         var items: [PendingItem] = []
@@ -89,7 +87,7 @@ struct AddStockIntent: AppIntent {
             items.append(item)
 
             var isCorrect = try await confirmYesNo(
-                dialog: "\(item.summary) — is that right?",
+                dialog: "\(item.bulletLine) — is that right?",
                 items: items,
                 highlightLast: true
             )
@@ -97,9 +95,19 @@ struct AddStockIntent: AppIntent {
                 let corrected = try await resolveItem(at: index, forceReask: true)
                 items[items.count - 1] = corrected
                 isCorrect = try await confirmYesNo(
-                    dialog: "\(corrected.summary) — is that right?",
+                    dialog: "\(corrected.bulletLine) — is that right?",
                     items: items,
                     highlightLast: true
+                )
+            }
+
+            // Show the running list before asking for the next item — skipped
+            // after the last item since reviewUntilConfirmed shows the same
+            // list again right away.
+            if index < count {
+                try? await requestConfirmation(
+                    actionName: .continue,
+                    snippetIntent: StockListSnippetIntent(items: items, dialog: "Got it. Ready for the next item?")
                 )
             }
         }
@@ -115,25 +123,32 @@ struct AddStockIntent: AppIntent {
         )
     }
 
-    /// Shows the full list and asks "is this correct?" — on rejection, asks
-    /// which item number is wrong, re-resolves just that one, and loops
-    /// back to reviewing the full list again until confirmed.
+    /// Shows the full list as a snippet and asks "is this correct?" via
+    /// `requestConfirmation(actionName:snippetIntent:)` — the only API that
+    /// pairs a visible snippet with a yes/no gate (`requestDisambiguation`
+    /// used elsewhere in this flow has no `view:` parameter). Apple's
+    /// guidance is to let that call's rejection (a thrown cancellation)
+    /// propagate and end `perform()`, but that doesn't fit needing to loop
+    /// back and ask a follow-up, so it's caught here instead: on rejection,
+    /// ask which item number is wrong, re-resolve just that one, and review
+    /// the full list again until confirmed.
     private func reviewUntilConfirmed(items: inout [PendingItem]) async throws {
         while true {
-            let isCorrect = try await confirmYesNo(
-                dialog: "Here's everything — is this correct?",
-                items: items,
-                highlightLast: false
-            )
-            if isCorrect { return }
-
-            correctionIndex = nil
-            let rawIndex = try await $correctionIndex.requestValue(
-                IntentDialog(stringLiteral: "Which item number is wrong?")
-            )
-            let index = min(max(rawIndex, 1), items.count)
-            let corrected = try await resolveItem(at: index, forceReask: true)
-            items[index - 1] = corrected
+            do {
+                try await requestConfirmation(
+                    actionName: .continue,
+                    snippetIntent: StockListSnippetIntent(items: items, dialog: "Here's everything — is this correct?")
+                )
+                return
+            } catch is CancellationError {
+                correctionIndex = nil
+                let rawIndex = try await $correctionIndex.requestValue(
+                    IntentDialog(stringLiteral: "Which item number is wrong?")
+                )
+                let index = min(max(rawIndex, 1), items.count)
+                let corrected = try await resolveItem(at: index, forceReask: true)
+                items[index - 1] = corrected
+            }
         }
     }
 
@@ -153,11 +168,38 @@ struct AddStockIntent: AppIntent {
     /// Resolves a single item's phrase + cost. With `forceReask`, ignores
     /// any already-resolved value and re-prompts — used both for a rejected
     /// per-item confirm and for a targeted correction from the final review.
+    ///
+    /// Item name comes straight from Siri's own transcription (via
+    /// StockPhraseParser's deterministic qty/unit extraction) rather than an
+    /// LLM cleanup pass — the on-device LLM was hallucinating item names
+    /// here, and Siri's STT + the existing unit dictionary is enough to get
+    /// a usable name without it.
     private func resolveItem(at index: Int, forceReask: Bool) async throws -> PendingItem {
         let phrase = try await resolvePhrase(at: index, forceReask: forceReask)
-        let parsed = try await llm.parseStockPhrase(phrase)
-        let cost = try await resolveCost(at: index, itemName: parsed.itemName, forceReask: forceReask)
-        return PendingItem(itemName: parsed.itemName, quantity: parsed.quantity, unit: parsed.unit, totalCost: cost)
+        let parsed = StockPhraseParser.parse(phrase)
+        let itemName = Self.itemName(from: parsed.remainingText)
+        let cost = try await resolveCost(at: index, itemName: itemName, forceReask: forceReask)
+        return PendingItem(itemName: itemName, quantity: parsed.quantity, unit: parsed.unit, totalCost: cost)
+    }
+
+    /// Strips common leading filler words ("of", "for", "the", "a", "an")
+    /// left over after StockPhraseParser removes the quantity+unit span,
+    /// e.g. "of chicken wings" -> "chicken wings". Falls back to the
+    /// untrimmed text if stripping would leave nothing.
+    private static let leadingFillerWords: Set<String> = ["of", "for", "the", "a", "an"]
+
+    private static func itemName(from remainingText: String) -> String {
+        var words = remainingText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .map(String.init)
+
+        while let first = words.first, leadingFillerWords.contains(first.lowercased()) {
+            words.removeFirst()
+        }
+
+        let cleaned = words.joined(separator: " ")
+        return cleaned.isEmpty ? remainingText.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
     }
 
     /// Resolves the free-text phrase parameter at `index`, prompting via
@@ -215,7 +257,7 @@ struct AddStockIntent: AppIntent {
 /// One resolved item awaiting confirmation/commit — mutable stand-in for
 /// StockStore's add() tuple so a correction can overwrite a single slot in
 /// the in-progress `items` array by index.
-struct PendingItem {
+struct PendingItem: Sendable {
     let itemName: String
     let quantity: Double
     let unit: String
@@ -223,7 +265,23 @@ struct PendingItem {
 
     var summary: String {
         let quantityText = quantity == quantity.rounded() ? String(Int(quantity)) : String(quantity)
-        return "\(quantityText) \(unit) \(itemName)"
+        return "\(quantityText) \(unit) of \(itemName)"
+    }
+
+    /// Matches the "Rp"-prefixed currency formatting used elsewhere in the
+    /// app (see HistoryScreen) rather than a bare number.
+    var formattedCost: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencySymbol = "Rp"
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: totalCost as NSNumber) ?? "Rp0"
+    }
+
+    /// e.g. "50 gr of chicken wings - Rp150,000" — the bullet-point line
+    /// shown in the running-list snippet between items.
+    var bulletLine: String {
+        totalCost > 0 ? "\(summary) - \(formattedCost)" : summary
     }
 }
 
@@ -260,6 +318,60 @@ struct AddedStockSnippetView: View {
 
     private func formatQuantity(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(value)
+    }
+}
+
+/// Shown by `requestConfirmation(actionName:snippetIntent:)` both between
+/// items (running list so far) and at the final review — a `SnippetIntent`
+/// refines `AppIntent`, so it needs a plain `init()` and its data-carrying
+/// properties must be `@Parameter` (only String/Int/Double/AppEntity-ish
+/// types qualify, not an arbitrary array of a custom struct — a raw
+/// `[PendingItem]` property failed AppIntent conformance). The item list is
+/// pre-formatted into one newline-joined, bullet-point `summaryText` string
+/// instead, set right after construction, so the snippet view just renders
+/// it as text lines rather than styled per-row rows. The spoken dialog is
+/// carried on the snippet intent itself (not the outer requestConfirmation
+/// call) since that's where `ShowsSnippetView`'s `.result(dialog:view:)`
+/// lives.
+struct StockListSnippetIntent: SnippetIntent {
+    static var title: LocalizedStringResource = "Stock Items"
+
+    @Parameter(title: "Summary")
+    var summaryText: String
+    @Parameter(title: "Dialog")
+    var dialogText: String
+
+    init() {}
+
+    init(items: [PendingItem], dialog: String) {
+        self.summaryText = items.map { "• \($0.bulletLine)" }.joined(separator: "\n")
+        self.dialogText = dialog
+    }
+
+    func perform() async throws -> some IntentResult & ShowsSnippetView & ProvidesDialog {
+        .result(dialog: IntentDialog(stringLiteral: dialogText), view: ReviewStockSnippetView(summaryText: summaryText))
+    }
+}
+
+/// Renders `StockListSnippetIntent`'s pre-formatted, newline-joined bullet
+/// list as plain text lines — a `SnippetIntent`'s data must travel through
+/// an `@Parameter` String rather than a typed array (see
+/// `StockListSnippetIntent`), so this view has no per-row styling to work
+/// with, just the text.
+struct ReviewStockSnippetView: View {
+    let summaryText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Stock Items", systemImage: "shippingbox.fill")
+                .font(.headline)
+
+            Text(summaryText)
+                .font(.subheadline)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding()
     }
 }
 
