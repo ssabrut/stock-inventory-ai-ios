@@ -118,6 +118,14 @@ struct StockAgentIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+        if action == .checkStock || action == .addStock {
+            // Lands the foregrounded app on "Stok Bahan" (InventoryScreen)
+            // so the user sees the actual stock list, not whatever screen
+            // was showing before Siri opened the app — ContentView applies
+            // this via AppNavigationState.shared the next time it appears.
+            AppNavigationState.shared.pendingScreen = .inventory
+        }
+
         if action == .checkStock {
             let entries = StockStore.all()
             return .result(
