@@ -99,7 +99,7 @@ final class LLMService {
 
     private var systemPrompt: String {
         """
-        Kamu adalah asisten AI untuk aplikasi manajemen stok inventori. Jawab singkat, jelas, dan dalam Bahasa Indonesia.
+        Kamu adalah asisten AI untuk aplikasi manajemen stok inventori dan menu POS. Jawab singkat, jelas, dan dalam Bahasa Indonesia.
 
         \(toolRegistry.systemPromptFragment)
         """
