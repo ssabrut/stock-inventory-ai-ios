@@ -11,6 +11,9 @@ struct SettingsScreen: View {
     @State private var cachedModels: [LLMService.CachedModel] = []
     @State private var modelPendingDelete: LLMService.CachedModel?
     @State private var showDeleteAllConfirm = false
+    @State private var showDeleteAllDataConfirm = false
+    @State private var showDeleteAllMenuConfirm = false
+    @State private var successMessage: String?
     @State private var errorMessage: String?
 
     private var totalSizeBytes: Int64 {
@@ -64,15 +67,26 @@ struct SettingsScreen: View {
                 }
             }
 
-            if !cachedModels.isEmpty {
-                Section {
+            Section {
+                if !cachedModels.isEmpty {
                     Button("Hapus Semua Cache Model", role: .destructive) {
                         showDeleteAllConfirm = true
                     }
                     .disabled(cachedModels.allSatisfy(\.isActive))
-                } footer: {
-                    Text("Model yang sedang aktif tidak akan terhapus. Model lain akan diunduh ulang saat dibutuhkan.")
                 }
+
+                Button("Hapus Semua Data Inventaris", role: .destructive) {
+                    showDeleteAllDataConfirm = true
+                }
+
+                Button("Hapus Semua Data Menu POS", role: .destructive) {
+                    showDeleteAllMenuConfirm = true
+                }
+            } header: {
+                Label("Danger Zone", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            } footer: {
+                Text("Tindakan di atas bersifat permanen dan tidak dapat dibatalkan.")
             }
         }
         .navigationTitle("Pengaturan")
@@ -99,6 +113,26 @@ struct SettingsScreen: View {
             Button("Hapus Semua", role: .destructive) { deleteAll() }
         } message: {
             Text("Semua model yang tidak sedang aktif akan dihapus dari perangkat.")
+        }
+        .alert("Hapus semua data inventaris?", isPresented: $showDeleteAllDataConfirm) {
+            Button("Batal", role: .cancel) {}
+            Button("Hapus Semua", role: .destructive) { deleteAllData() }
+        } message: {
+            Text("Semua stok dan riwayat transaksi akan dihapus permanen dan tidak dapat dikembalikan.")
+        }
+        .alert("Hapus semua data menu POS?", isPresented: $showDeleteAllMenuConfirm) {
+            Button("Batal", role: .cancel) {}
+            Button("Hapus Semua", role: .destructive) { deleteAllMenu() }
+        } message: {
+            Text("Semua menu POS akan dihapus permanen dan tidak dapat dikembalikan.")
+        }
+        .alert("Berhasil", isPresented: .init(
+            get: { successMessage != nil },
+            set: { if !$0 { successMessage = nil } }
+        )) {
+            Button("OK") { successMessage = nil }
+        } message: {
+            Text(successMessage ?? "")
         }
         .alert("Gagal menghapus", isPresented: .init(
             get: { errorMessage != nil },
@@ -127,9 +161,20 @@ struct SettingsScreen: View {
         do {
             try llm.deleteAllCachedModels()
             reload()
+            successMessage = "Semua cache model berhasil dihapus."
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func deleteAllData() {
+        StockStore.deleteAll()
+        successMessage = "Semua data inventaris berhasil dihapus."
+    }
+
+    private func deleteAllMenu() {
+        MenuStore.deleteAll()
+        successMessage = "Semua data menu POS berhasil dihapus."
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {

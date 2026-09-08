@@ -353,6 +353,28 @@ enum StockStore {
         }
     }
 
+    /// Wipes every stock entry and transaction — full reset of the app's
+    /// Core Data store, e.g. for a "clear all data" settings action.
+    static func deleteAll() {
+        context.performAndWait {
+            let entryRequest = StockEntryEntity.fetchRequest()
+            if let entries = try? context.fetch(entryRequest) {
+                for entity in entries {
+                    context.delete(entity)
+                }
+            }
+
+            let transactionRequest = StockTransactionEntity.fetchRequest()
+            if let transactions = try? context.fetch(transactionRequest) {
+                for entity in transactions {
+                    context.delete(entity)
+                }
+            }
+
+            try? context.save()
+        }
+    }
+
     /// Total cost of goods sold (sum of every `.remove` transaction's
     /// quantity * costPerUnit) within an optional date range.
     static func cogs(from startDate: Date? = nil, to endDate: Date? = nil) -> Double {

@@ -17,4 +17,11 @@
         <attribute name="type" attributeType="String"/>
         <attribute name="unit" attributeType="String"/>
     </entity>
+    <entity name="MenuItemEntity" representedClassName="MenuItemEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="category" attributeType="String"/>
+        <attribute name="icon" attributeType="String" defaultValueString="fork.knife"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="name" attributeType="String"/>
+        <attribute name="price" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+    </entity>
 </model>

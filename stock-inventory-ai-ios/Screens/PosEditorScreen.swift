@@ -85,8 +85,9 @@ private struct StartShiftScreen: View {
 }
 
 private struct EditPosScreen: View {
-    @State private var menuItems: [MenuItem] = MenuItem.mockItems
+    @State private var menuItems: [MenuItem] = []
     @State private var itemToEdit: MenuItem?
+    @State private var itemToDelete: MenuItem?
     @State private var isPresentingNewItem = false
 
     var body: some View {
@@ -98,6 +99,7 @@ private struct EditPosScreen: View {
             }
         }
         .navigationTitle("Edit POS")
+        .task { reload() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -109,16 +111,37 @@ private struct EditPosScreen: View {
         }
         .sheet(item: $itemToEdit) { item in
             MenuItemEditorSheet(item: item) { updated in
-                if let index = menuItems.firstIndex(where: { $0.id == updated.id }) {
-                    menuItems[index] = updated
-                }
+                MenuStore.update(updated)
+                reload()
             }
         }
         .sheet(isPresented: $isPresentingNewItem) {
             MenuItemEditorSheet(item: nil) { newItem in
-                menuItems.append(newItem)
+                MenuStore.add(name: newItem.name, price: newItem.price, category: newItem.category, icon: newItem.icon)
+                reload()
             }
         }
+        .alert("Hapus menu ini?", isPresented: .init(
+            get: { itemToDelete != nil },
+            set: { if !$0 { itemToDelete = nil } }
+        )) {
+            Button("Batal", role: .cancel) { itemToDelete = nil }
+            Button("Hapus", role: .destructive) {
+                if let item = itemToDelete {
+                    MenuStore.delete(id: item.id)
+                    reload()
+                }
+                itemToDelete = nil
+            }
+        } message: {
+            if let item = itemToDelete {
+                Text("\(item.name) akan dihapus dari menu.")
+            }
+        }
+    }
+
+    private func reload() {
+        menuItems = MenuStore.all()
     }
 
     private var menuList: some View {
@@ -131,6 +154,13 @@ private struct EditPosScreen: View {
                         MenuItemCard(item: item)
                     }
                     .buttonStyle(.plain)
+                    .swipeActions {
+                        Button(role: .destructive) {
+                            itemToDelete = item
+                        } label: {
+                            Label("Hapus", systemImage: "trash")
+                        }
+                    }
                 }
             }
             .padding(16)
