@@ -119,14 +119,153 @@ struct StockAgentIntent: AppIntent {
             return .result(dialog: IntentDialog(stringLiteral: checkStockResult()))
         }
 
+        if action == .addStock {
+            return .result(dialog: IntentDialog(stringLiteral: try await performAddLoop()))
+        }
+
         let phrase = try await resolveDetailPhrase()
         let response = try await llm.agenticReply(to: phrase)
         return .result(dialog: IntentDialog(stringLiteral: try await resolve(response, originalPrompt: phrase)))
     }
 
+    /// Drives the full multi-item add flow: ask how many items up front,
+    /// collect + confirm each one individually (re-asking the same slot on
+    /// "No"), then ask one final yes/no over the whole batch before any
+    /// StockStore write happens — a "No" at that last step cancels the
+    /// entire batch, not just the last item. Nothing is committed until
+    /// that final confirmation, unlike the old per-item flow which wrote
+    /// immediately on each item's own "Yes, go ahead".
+    private func performAddLoop() async throws -> String {
+        confirmChoice = nil
+        let countChoice = try await $confirmChoice.requestDisambiguation(
+            among: ["1", "2", "3"],
+            dialog: IntentDialog(stringLiteral: "How many items do you want to add?")
+        )
+        let itemCount = Int(countChoice) ?? 1
+
+        var pendingCalls: [(call: ToolCall, summary: String)] = []
+
+        for itemIndex in 0..<itemCount {
+            let ordinal = itemIndex + 1
+            let pending = try await collectAddItem(ordinal: ordinal, total: itemCount)
+            pendingCalls.append(pending)
+        }
+
+        let batchSummary = pendingCalls.map(\.summary).joined(separator: " ")
+        confirmChoice = nil
+        let finalChoice = try await $confirmChoice.requestDisambiguation(
+            among: [Self.yesChoice, Self.noChoice],
+            dialog: IntentDialog(stringLiteral: "\(batchSummary) Add all of these?")
+        )
+        guard finalChoice == Self.yesChoice else {
+            return "Okay, cancelled. Nothing was added."
+        }
+
+        let results = pendingCalls.map { pending -> String in
+            do {
+                return try AddStockTool().call(arguments: pending.call.arguments)
+            } catch let error as AgentToolError {
+                return error.message
+            } catch {
+                return "Sorry, something went wrong adding \(pending.summary)"
+            }
+        }
+        return results.joined(separator: " ")
+    }
+
+    /// Asks for one item's detail phrase, fills in whichever of item name /
+    /// quantity+unit / price the model's parse left missing with its own
+    /// targeted follow-up (rather than discarding the whole phrase over one
+    /// missing field), then speaks the item's summary back for a yes/no —
+    /// "No" re-asks this same slot from scratch rather than advancing, so a
+    /// misheard item can be redone without restarting the whole batch.
+    /// Returns the approved `ToolCall` un-executed; `performAddLoop` only
+    /// runs it after the final batch-wide confirmation.
+    private func collectAddItem(ordinal: Int, total: Int) async throws -> (call: ToolCall, summary: String) {
+        let itemLabel = total > 1 ? "item \(ordinal) of \(total)" : "the item"
+        var askPrompt = "What's \(itemLabel)? Say the name and quantity."
+
+        while true {
+            let phrase = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: askPrompt))
+            detailPhrase = nil
+
+            // The bare utterance alone ("5kg of white pepper") reads as
+            // ambiguous to the 1.5B model without a verb — it would often
+            // answer conversationally instead of calling add_stock. Framing
+            // it explicitly as an add request makes the intent unambiguous.
+            let response = try await llm.agenticReply(to: "Add \(phrase) to inventory.")
+
+            guard var call = Self.addStockCall(from: response) else {
+                askPrompt = "Sorry, I didn't catch an item and quantity — try again. What's \(itemLabel)?"
+                continue
+            }
+
+            if (call.arguments["itemName"] as? String)?.trimmingCharacters(in: .whitespaces).isEmpty ?? true {
+                let name = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: "What's the item's name?"))
+                detailPhrase = nil
+                call = call.addingArgument(name, forKey: "itemName")
+            }
+
+            if (call.arguments["quantity"] as? NSNumber)?.doubleValue == nil {
+                let amountPhrase = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: "How much, and what unit?"))
+                detailPhrase = nil
+                let parsed = StockPhraseParser.parse(amountPhrase)
+                call = call.addingArgument(parsed.quantity, forKey: "quantity")
+                call = call.addingArgument(parsed.unit, forKey: "unit")
+            } else if (call.arguments["unit"] as? String)?.isEmpty ?? true {
+                let unitPhrase = try await $detailPhrase.requestValue(IntentDialog(stringLiteral: "What unit — kilograms, grams, pieces?"))
+                detailPhrase = nil
+                call = call.addingArgument(StockPhraseParser.canonicalUnit(unitPhrase), forKey: "unit")
+            }
+
+            let tool = AddStockTool()
+            if tool.needsPrice(arguments: call.arguments) {
+                let reply = try await $priceReply.requestValue(IntentDialog(stringLiteral: "What's the price?"))
+                priceReply = nil
+                guard case .needsConfirmation(let priced, _) = llm.resolvePriceReply(reply, call: call) else {
+                    askPrompt = "Sorry, I didn't catch a price — let's try \(itemLabel) again."
+                    continue
+                }
+                call = priced
+            }
+
+            let summary = tool.confirmationSummary(arguments: call.arguments)
+            confirmChoice = nil
+            let choice = try await $confirmChoice.requestDisambiguation(
+                among: [Self.yesChoice, Self.noChoice],
+                dialog: IntentDialog(stringLiteral: "\(summary) Is that correct?")
+            )
+            if choice == Self.yesChoice {
+                return (call, summary)
+            }
+            askPrompt = "Let's try \(itemLabel) again. Say the name and quantity."
+        }
+    }
+
+    /// Extracts a `ToolCall` to work with regardless of which `AgentResponse`
+    /// case the model produced — `.needsConfirmation`/`.needsPrice` already
+    /// carry one; `.answer` (the model didn't call add_stock at all, e.g. an
+    /// empty or nonsense phrase) has none, so the caller re-prompts from
+    /// scratch. Price is deliberately left for `collectAddItem`'s own
+    /// `needsPrice` check rather than resolved here, since a bare `.needsPrice`
+    /// call from `agenticReply` still needs the same field-completeness pass.
+    private static func addStockCall(from response: LLMService.AgentResponse) -> ToolCall? {
+        switch response {
+        case .answer:
+            return nil
+        case .needsPrice(let call), .needsConfirmation(let call, _):
+            return call
+        }
+    }
+
     /// Walks an `AgentResponse` to a final spoken string, looping through a
     /// price follow-up and/or a confirm turn exactly like ChatScreen does
-    /// for the same enum, just via Siri turns instead of chat bubbles.
+    /// for the same enum, just via Siri turns instead of chat bubbles. Used
+    /// by updateStock/deleteStock/ask, which each target one call per
+    /// invocation and commit immediately on confirm — addStock no longer
+    /// goes through here (see `performAddLoop`/`collectAddItem`), since it
+    /// needs to hold every item's approved call until one final batch-wide
+    /// confirmation before anything is written.
     private func resolve(_ response: LLMService.AgentResponse, originalPrompt: String) async throws -> String {
         switch response {
         case .answer(let text):
