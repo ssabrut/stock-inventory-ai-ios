@@ -175,8 +175,14 @@ struct StockAgentIntent: AppIntent {
         return transcripts
     }
 
-    private static let yesChoice = "Yes, that's correct"
-    private static let noChoice = "No, let me fix it"
+    // Plain, punctuation-free choice strings — "Yes, that's correct"
+    // (with the apostrophe) reliably hung at the requestDisambiguation
+    // await below when spoken in full, while "No, let me fix it" resolved
+    // fine; that's the one asymmetry between the two original strings, so
+    // apostrophes/contractions are the suspected cause until proven
+    // otherwise.
+    private static let yesChoice = "Yes correct"
+    private static let noChoice = "No fix it"
 
     /// Asks "<transcript>. Is that correct?" with an explicit Yes/No choice
     /// via `requestDisambiguation` — deliberately *not*
