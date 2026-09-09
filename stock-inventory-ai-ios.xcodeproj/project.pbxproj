@@ -31,9 +31,22 @@
 		A7801823304A9C46003646D6 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A7CD59343051024C00B8312C /* Exceptions for "stock-inventory-ai-ios" folder in "stock-inventory-ai-ios" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A73FE19D30471DE800FD3456 /* stock-inventory-ai-ios */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A7CD59343051024C00B8312C /* Exceptions for "stock-inventory-ai-ios" folder in "stock-inventory-ai-ios" target */,
+			);
 			path = "stock-inventory-ai-ios";
 			sourceTree = "<group>";
 		};
@@ -369,6 +382,7 @@
 				DEVELOPMENT_TEAM = 9NQQM8PHBZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "stock-inventory-ai-ios/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Invent;
 				INFOPLIST_KEY_HFToken = "$(HF_TOKEN)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Invent butuh akses mikrofon untuk mendengarkan item stok yang kamu ucapkan.";
@@ -408,6 +422,7 @@
 				DEVELOPMENT_TEAM = 9NQQM8PHBZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "stock-inventory-ai-ios/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Invent;
 				INFOPLIST_KEY_HFToken = "$(HF_TOKEN)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Invent butuh akses mikrofon untuk mendengarkan item stok yang kamu ucapkan.";

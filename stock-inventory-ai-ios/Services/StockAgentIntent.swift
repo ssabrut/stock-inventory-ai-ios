@@ -392,12 +392,13 @@ struct StockAgentIntent: AppIntent {
 
     /// Spoken summary for checkStock, built from the same `entries` snapshot
     /// passed to `StockSnippetView` — one `StockStore.all()` fetch covers
-    /// both the dialog and the visual snippet.
+    /// both the dialog and the visual snippet. Kept short since iOS echoes
+    /// this dialog text as an on-screen caption above the snippet view —
+    /// reading out every item here would duplicate the full list
+    /// StockSnippetView already shows visually.
     private func checkStockResult(entries: [StockEntry]) -> String {
         guard !entries.isEmpty else { return "Inventory is empty." }
-        return entries
-            .map { "\($0.itemName): \(formatQuantity($0.quantity)) \($0.unit)" }
-            .joined(separator: "\n")
+        return "You have \(entries.count) item\(entries.count == 1 ? "" : "s") in stock."
     }
 }
 
@@ -437,6 +438,11 @@ struct TranscriptSnippetView: View {
 struct StockSnippetView: View {
     let entries: [StockEntry]
 
+    /// Rows shown before falling back to the "Lihat Semua" link — bigger
+    /// than the old cap of 5 so the snippet reads as a real inventory list
+    /// rather than a teaser.
+    private static let visibleLimit = 15
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Current Stock", systemImage: "shippingbox.fill")
@@ -447,7 +453,7 @@ struct StockSnippetView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(entries.prefix(5)) { entry in
+                ForEach(entries.prefix(Self.visibleLimit)) { entry in
                     HStack {
                         Text(entry.itemName)
                             .font(.subheadline)
@@ -457,8 +463,8 @@ struct StockSnippetView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                if entries.count > 5 {
-                    Text("+ \(entries.count - 5) more")
+                if entries.count > Self.visibleLimit {
+                    Text("+ \(entries.count - Self.visibleLimit) more")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
