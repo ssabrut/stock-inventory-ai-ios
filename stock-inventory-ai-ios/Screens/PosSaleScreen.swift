@@ -15,6 +15,7 @@ struct PosSaleScreen: View {
     @State private var selectedCategory: MenuCategory = .makanan
     @State private var cartItems: [CartItem] = []
     @State private var showEndShiftConfirm = false
+    @State private var checkoutSuccessMessage: String?
 
     private var filteredItems: [MenuItem] {
         menuItems.filter { $0.category.caseInsensitiveCompare(selectedCategory.rawValue) == .orderedSame }
@@ -52,6 +53,14 @@ struct PosSaleScreen: View {
             }
         } message: {
             Text("Keranjang yang belum dibayar akan hilang.")
+        }
+        .alert("Pesanan diproses", isPresented: .init(
+            get: { checkoutSuccessMessage != nil },
+            set: { if !$0 { checkoutSuccessMessage = nil } }
+        )) {
+            Button("OK") { checkoutSuccessMessage = nil }
+        } message: {
+            Text(checkoutSuccessMessage ?? "")
         }
     }
 
@@ -192,9 +201,9 @@ struct PosSaleScreen: View {
                 }
 
                 Button {
-                    cartItems.removeAll()
+                    checkout()
                 } label: {
-                    Text("Bayar")
+                    Text("Proses")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -220,6 +229,13 @@ struct PosSaleScreen: View {
         if cartItems[index].quantity <= 0 {
             cartItems.remove(at: index)
         }
+    }
+
+    private func checkout() {
+        guard !cartItems.isEmpty else { return }
+        let order = OrderStore.checkout(shiftId: shift.id, items: cartItems)
+        checkoutSuccessMessage = "Total \(order.total.formatted(.currency(code: "IDR").precision(.fractionLength(0)))) berhasil disimpan."
+        cartItems.removeAll()
     }
 }
 
