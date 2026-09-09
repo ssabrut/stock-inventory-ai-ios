@@ -357,7 +357,7 @@ struct StockAgentIntent: AppIntent {
             if tool.needsPrice(arguments: call.arguments) {
                 let reply = try await $priceReply.requestValue(IntentDialog(stringLiteral: "What's the price for item \(ordinal)?"))
                 priceReply = nil
-                guard case .needsConfirmation(let priced, _) = llm.resolvePriceReply(reply, call: call) else {
+                guard case .needsConfirmation(let priced, _, _) = llm.resolvePriceReply(reply, call: call, state: LLMService.singleShotLoopState) else {
                     results.append("Sorry, I didn't catch a price for \"\(transcript)\" — it wasn't added.")
                     continue
                 }
@@ -385,7 +385,7 @@ struct StockAgentIntent: AppIntent {
         switch response {
         case .answer:
             return nil
-        case .needsPrice(let call), .needsConfirmation(let call, _):
+        case .needsPrice(let call, _), .needsConfirmation(let call, _, _):
             return call
         }
     }

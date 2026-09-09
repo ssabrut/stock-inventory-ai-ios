@@ -93,9 +93,34 @@ final class LLMService {
     /// across the confirm step.
     enum AgentResponse {
         case answer(String)
-        case needsConfirmation(call: ToolCall, summary: String)
-        case needsPrice(call: ToolCall)
+        case needsConfirmation(call: ToolCall, summary: String, loopState: AgentLoopState)
+        case needsPrice(call: ToolCall, loopState: AgentLoopState)
     }
+
+    /// Carries an in-progress agentic loop's chat transcript and round count
+    /// across a pause point (`.needsConfirmation` / `.needsPrice`) so
+    /// resuming after user input continues the SAME loop up to
+    /// `maxAgentRounds`, instead of restarting it or collapsing straight to
+    /// a forced final answer.
+    struct AgentLoopState {
+        var chat: [Chat.Message]
+        var roundsUsed: Int
+    }
+
+    /// Inert placeholder for callers that resolve a price/confirmation
+    /// outside any multi-round loop (e.g. `StockAgentIntent`'s voice flow,
+    /// which never resumes a loop) but still need to satisfy the `state:`
+    /// parameter. `roundsUsed: maxAgentRounds` guarantees that if it were
+    /// ever fed into `resolveConfirmedToolCall`, that call would go
+    /// straight to a forced final answer rather than loop further.
+    static let singleShotLoopState = AgentLoopState(chat: [], roundsUsed: maxAgentRounds)
+
+    /// Hard cap on tool-decision generations per agentic turn. The model is
+    /// a 0.5B on-device model — chaining tool calls compounds the chance of
+    /// it hallucinating a bad call or looping, so this bounds how many
+    /// times it gets to decide "call another tool" before being forced to
+    /// wrap up with a plain answer.
+    private static let maxAgentRounds = 3
 
     private var systemPrompt: String {
         """
@@ -105,55 +130,88 @@ final class LLMService {
         """
     }
 
-    /// Tanya AI's chat entry point: lets the model call one of ToolRegistry's
-    /// stock tools when it needs live inventory data instead of always
-    /// injecting the full stock list as context (the old `reply(to:
-    /// stockContext:)` approach). Capped at one tool-call round — a 1.5B
-    /// on-device model is reliable enough to pick and use a single tool, but
-    /// chaining several compounds the chance of it hallucinating a bad call
-    /// or looping, so after one tool result it must produce a final answer.
+    /// Tanya AI's chat entry point: lets the model call ToolRegistry's stock
+    /// tools when it needs live inventory data instead of always injecting
+    /// the full stock list as context (the old `reply(to: stockContext:)`
+    /// approach). Delegates to `runLoop`, which allows up to
+    /// `maxAgentRounds` tool-decision rounds so the model can chain steps
+    /// (e.g. check stock, then act on it) rather than being limited to one.
     ///
     /// Read-only tools (e.g. get_stock) run immediately since they have no
-    /// side effect to confirm. Mutating tools stop short of `.execute` and
-    /// return `.needsConfirmation` instead.
+    /// side effect to confirm, and the loop continues. Mutating tools stop
+    /// short of `.execute` and return `.needsConfirmation` instead, pausing
+    /// the loop for the caller to resume via `resolveConfirmedToolCall`.
     func agenticReply(to prompt: String) async throws -> AgentResponse {
-        let firstRaw = try await generate(
-            chat: [.system(systemPrompt), .user(prompt)],
-            temperature: 0.6
-        )
-        #if DEBUG
-        print("[LLMService] prompt: \(prompt)\n[LLMService] raw: \(firstRaw)")
-        #endif
+        let state = AgentLoopState(chat: [.system(systemPrompt), .user(prompt)], roundsUsed: 0)
+        return try await runLoop(state: state)
+    }
 
-        switch toolRegistry.parseReply(firstRaw) {
-        case .answer(let text):
-            return .answer(text)
+    /// Drives up to `maxAgentRounds` model generations from `state`,
+    /// executing read-only tool calls inline and pausing (returning
+    /// `.needsConfirmation`/`.needsPrice`, both carrying the updated
+    /// `state`) at mutating/price-missing calls so the caller can resume via
+    /// `resolveConfirmedToolCall`/`resolvePriceReply`. If the round cap is
+    /// hit while the model still wants a tool, forces one last generation
+    /// demanding `{"answer": ...}` only.
+    private func runLoop(state: AgentLoopState) async throws -> AgentResponse {
+        var state = state
 
-        case .toolCall(let call):
-            guard let tool = toolRegistry.tool(named: call.name) else {
-                return .answer(toolRegistry.execute(call))
+        while state.roundsUsed < Self.maxAgentRounds {
+            let raw = try await generate(chat: state.chat, temperature: 0.6)
+            state.roundsUsed += 1
+            state.chat.append(.assistant(raw))
+            #if DEBUG
+            print("[LLMService] round \(state.roundsUsed) raw: \(raw)")
+            #endif
+
+            switch toolRegistry.parseReply(raw) {
+            case .answer(let text):
+                return .answer(text)
+
+            case .toolCall(let call):
+                guard let tool = toolRegistry.tool(named: call.name) else {
+                    return .answer(toolRegistry.execute(call))
+                }
+
+                if tool.needsPrice(arguments: call.arguments) {
+                    return .needsPrice(call: call, loopState: state)
+                }
+
+                if tool.isMutating {
+                    return .needsConfirmation(
+                        call: call,
+                        summary: tool.confirmationSummary(arguments: call.arguments),
+                        loopState: state
+                    )
+                }
+
+                // Read-only: run immediately, fold the result back into the
+                // transcript, and continue looping (model may answer or
+                // call again next round, up to the cap).
+                let toolResult = toolRegistry.execute(call)
+                state.chat.append(.user(toolResultPrompt(toolName: call.name, result: toolResult)))
             }
-
-            if tool.needsPrice(arguments: call.arguments) {
-                return .needsPrice(call: call)
-            }
-
-            if tool.isMutating {
-                return .needsConfirmation(call: call, summary: tool.confirmationSummary(arguments: call.arguments))
-            }
-
-            return .answer(try await finalAnswer(prompt: prompt, firstRaw: firstRaw, call: call))
         }
+
+        return .answer(try await forceFinalAnswer(state: state))
     }
 
     /// Runs a mutating tool call the user has just approved via the
-    /// `.needsConfirmation` prompt, then asks the model to phrase the result
-    /// as a final reply. There is no re-parsing of a fresh model turn for
-    /// tool selection here — the call itself already came from the model
-    /// and was only gated on user approval, not re-decided.
-    func resolveConfirmedToolCall(_ call: ToolCall, originalPrompt: String) async throws -> String {
-        let rawCallJSON = "{\"tool\": \"\(call.name)\", \"args\": \(jsonString(from: call.arguments))}"
-        return try await finalAnswer(prompt: originalPrompt, firstRaw: rawCallJSON, call: call)
+    /// `.needsConfirmation` prompt, appends its result to the paused loop's
+    /// transcript, and resumes the loop from where it left off (same round
+    /// budget) — the model may finish with an answer, call another tool, or
+    /// hit the cap, exactly as if this had been an inline read-only step.
+    /// `state` must be the `loopState` from the `.needsConfirmation` this
+    /// call is resolving.
+    func resolveConfirmedToolCall(_ call: ToolCall, state: AgentLoopState) async throws -> AgentResponse {
+        var state = state
+        let toolResult = toolRegistry.execute(call)
+        state.chat.append(.user(toolResultPrompt(toolName: call.name, result: toolResult)))
+
+        guard state.roundsUsed < Self.maxAgentRounds else {
+            return .answer(try await forceFinalAnswer(state: state))
+        }
+        return try await runLoop(state: state)
     }
 
     /// Parses `reply` as a bare price number (e.g. "20000", "150 ribu") and
@@ -161,15 +219,21 @@ final class LLMService {
     /// parameter, then routes it through the normal confirm step exactly
     /// like a model-produced call — the caller (ChatScreen) got here from
     /// `.needsPrice` and is holding `call` across this one extra turn since
-    /// the model itself has no memory of it. Returns nil (instead of
-    /// throwing) when `reply` has no parseable number, so the caller can
-    /// re-prompt rather than crash on a stray chat message.
-    func resolvePriceReply(_ reply: String, call: ToolCall) -> AgentResponse? {
+    /// the model itself has no memory of it. `state` is passed through
+    /// unchanged (no generation happens here, just an argument merge) so the
+    /// confirm step can resume the loop exactly as before. Returns nil
+    /// (instead of throwing) when `reply` has no parseable number, so the
+    /// caller can re-prompt rather than crash on a stray chat message.
+    func resolvePriceReply(_ reply: String, call: ToolCall, state: AgentLoopState) -> AgentResponse? {
         guard let price = Self.firstPriceNumber(in: reply) else { return nil }
         guard let tool = toolRegistry.tool(named: call.name) else { return nil }
 
         let updatedCall = call.addingArgument(price, forKey: "totalCost")
-        return .needsConfirmation(call: updatedCall, summary: tool.confirmationSummary(arguments: updatedCall.arguments))
+        return .needsConfirmation(
+            call: updatedCall,
+            summary: tool.confirmationSummary(arguments: updatedCall.arguments),
+            loopState: state
+        )
     }
 
     private static let priceMultiplierAliases: [String: Double] = [
@@ -202,27 +266,40 @@ final class LLMService {
         return number * multiplier
     }
 
-    private func finalAnswer(prompt: String, firstRaw: String, call: ToolCall) async throws -> String {
-        let toolResult = toolRegistry.execute(call)
-
-        let finalPrompt = """
-        Tool "\(call.name)" returned:
-        \(toolResult)
-
-        Reply with ONLY {"answer": "<your reply to the user in Bahasa Indonesia, using the tool result above>"}
+    /// Prompt fragment folding a tool's result back into the transcript.
+    /// Mid-loop the model is still allowed to call another tool (unlike
+    /// `forceFinalAnswer`'s prompt, which forbids it), so this explicitly
+    /// offers both options.
+    private func toolResultPrompt(toolName: String, result: String) -> String {
         """
+        Tool "\(toolName)" returned:
+        \(result)
 
-        let finalRaw = try await generate(
-            chat: [.system(systemPrompt), .user(prompt), .assistant(firstRaw), .user(finalPrompt)],
-            temperature: 0.6
-        )
+        If you need another tool to finish answering, reply with the tool-call JSON. \
+        Otherwise reply with ONLY {"answer": "<your reply to the user in Bahasa Indonesia>"}
+        """
+    }
 
+    /// Forces exactly one more generation demanding `{"answer": ...}` only —
+    /// used when the round cap is hit while a tool result (or a just-
+    /// resolved confirmation) is pending a reply. Falls back to the model's
+    /// raw text if it ignores the instruction and tries another tool call
+    /// anyway.
+    private func forceFinalAnswer(state: AgentLoopState) async throws -> String {
+        var chat = state.chat
+        chat.append(.user("""
+            You have reached the maximum number of tool-call rounds. \
+            Reply with ONLY {"answer": "<your final reply to the user in Bahasa Indonesia>"} — \
+            do not call another tool.
+            """))
+
+        let finalRaw = try await generate(chat: chat, temperature: 0.6)
         switch toolRegistry.parseReply(finalRaw) {
         case .answer(let text):
             return text
         case .toolCall:
-            // Model tried to chain a second tool call past the one-round
-            // cap; fall back to its raw text rather than executing it.
+            // Model tried to chain another tool call past the round cap;
+            // fall back to its raw text rather than executing it.
             return finalRaw
         }
     }
@@ -266,15 +343,20 @@ final class LLMService {
                 return .answer(toolRegistry.execute(call))
             }
 
+            let loopState = AgentLoopState(chat: [.system(systemPrompt), .user(prompt), .assistant(firstRaw)], roundsUsed: 1)
+
             if tool.needsPrice(arguments: call.arguments) {
-                return .needsPrice(call: call)
+                return .needsPrice(call: call, loopState: loopState)
             }
 
             if tool.isMutating {
-                return .needsConfirmation(call: call, summary: tool.confirmationSummary(arguments: call.arguments))
+                return .needsConfirmation(call: call, summary: tool.confirmationSummary(arguments: call.arguments), loopState: loopState)
             }
 
-            return .answer(try await finalAnswer(prompt: prompt, firstRaw: firstRaw, call: call))
+            var resolvedState = loopState
+            let toolResult = toolRegistry.execute(call)
+            resolvedState.chat.append(.user(toolResultPrompt(toolName: call.name, result: toolResult)))
+            return .answer(try await forceFinalAnswer(state: resolvedState))
         }
     }
 
@@ -310,15 +392,6 @@ final class LLMService {
             index = text.index(after: index)
         }
         return nil
-    }
-
-    private func jsonString(from arguments: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: arguments),
-              let string = String(data: data, encoding: .utf8)
-        else {
-            return "{}"
-        }
-        return string
     }
 
     private func generate(chat: [Chat.Message], temperature: Float) async throws -> String {
