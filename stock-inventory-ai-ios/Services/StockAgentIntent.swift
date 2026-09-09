@@ -127,9 +127,14 @@ struct StockAgentIntent: AppIntent {
         }
 
         if action == .checkStock {
-            let entries = StockStore.all()
+            let allEntries = StockStore.all()
+            let filterName = detailPhrase?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let entries = filterName.isEmpty
+                ? allEntries
+                : allEntries.filter { $0.itemName.range(of: filterName, options: .caseInsensitive) != nil }
+
             return .result(
-                dialog: IntentDialog(stringLiteral: checkStockResult(entries: entries)),
+                dialog: IntentDialog(stringLiteral: checkStockResult(entries: entries, filterName: filterName)),
                 view: StockSnippetView(entries: entries)
             )
         }
@@ -395,10 +400,24 @@ struct StockAgentIntent: AppIntent {
     /// both the dialog and the visual snippet. Kept short since iOS echoes
     /// this dialog text as an on-screen caption above the snippet view —
     /// reading out every item here would duplicate the full list
-    /// StockSnippetView already shows visually.
-    private func checkStockResult(entries: [StockEntry]) -> String {
-        guard !entries.isEmpty else { return "Inventory is empty." }
-        return "You have \(entries.count) item\(entries.count == 1 ? "" : "s") in stock."
+    /// StockSnippetView already shows visually. When `filterName` is set
+    /// (e.g. "Check Ayam stock in Invent"), this is a single-item lookup, so
+    /// it's worth reading the actual quantity rather than just a count.
+    private func checkStockResult(entries: [StockEntry], filterName: String) -> String {
+        guard !filterName.isEmpty else {
+            guard !entries.isEmpty else { return "Inventory is empty." }
+            return "You have \(entries.count) item\(entries.count == 1 ? "" : "s") in stock."
+        }
+
+        guard !entries.isEmpty else {
+            return "No stock found for \(filterName)."
+        }
+        if entries.count == 1, let entry = entries.first {
+            return "\(entry.itemName): \(formatQuantity(entry.quantity)) \(entry.unit)."
+        }
+        return entries
+            .map { "\($0.itemName): \(formatQuantity($0.quantity)) \($0.unit)" }
+            .joined(separator: ". ")
     }
 }
 
@@ -496,7 +515,18 @@ struct StockAppShortcuts: AppShortcutsProvider {
                 "Check my stock in \(.applicationName)",
                 "Check my stock on \(.applicationName)",
                 "How much stock do I have in \(.applicationName)",
-                "How much stock do I have on \(.applicationName)"
+                "How much stock do I have on \(.applicationName)",
+                // Inline free-text capture into `detailPhrase` — unlike
+                // `action` (an enum baked per-shortcut, see the type doc
+                // comment above), AppIntents does support binding an
+                // optional String parameter straight from the phrase, so
+                // "Check Ayam stock in Invent" resolves the item name in one
+                // turn with no follow-up ask. `perform()` treats an empty
+                // detailPhrase the same as the plain "check stock" phrases.
+                "Check \(\.$detailPhrase) stock in \(.applicationName)",
+                "Check \(\.$detailPhrase) stock on \(.applicationName)",
+                "How much \(\.$detailPhrase) do I have in \(.applicationName)",
+                "How much \(\.$detailPhrase) do I have on \(.applicationName)"
             ],
             shortTitle: "Check Stock",
             systemImageName: "shippingbox.fill"
