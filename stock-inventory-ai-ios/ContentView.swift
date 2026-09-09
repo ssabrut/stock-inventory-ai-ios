@@ -24,6 +24,8 @@ struct ContentView: View {
                         switch selection {
                         case .posEditor:
                             PosEditorScreen()
+                        case .orderHistory:
+                            OrderHistoryScreen()
                         case .inventory:
                             InventoryScreen()
                         case .chat:

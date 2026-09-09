@@ -7,6 +7,7 @@ import SwiftUI
 
 enum AppScreen: String, CaseIterable, Identifiable {
     case posEditor
+    case orderHistory
     case inventory
     case chat
     case history
@@ -17,6 +18,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .posEditor: return "creditcard.fill"
+        case .orderHistory: return "receipt.fill"
         case .inventory: return "shippingbox.fill"
         case .chat: return "bubble.left.and.bubble.right.fill"
         case .history: return "chart.line.uptrend.xyaxis"
@@ -27,6 +29,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .posEditor: return "POS"
+        case .orderHistory: return "Riwayat Pesanan"
         case .inventory: return "Stok Bahan"
         case .chat: return "Tanya AI"
         case .history: return "Riwayat & HPP"

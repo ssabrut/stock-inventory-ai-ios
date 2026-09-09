@@ -11,18 +11,15 @@ struct PosEditorScreen: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let shift = activeShift {
-                    PosSaleScreen(shift: shift) {
-                        activeShift = nil
-                    }
-                } else if didCheckActiveShift {
-                    landingView
-                } else {
-                    Color.clear
+            if let shift = activeShift {
+                PosSaleScreen(shift: shift) {
+                    activeShift = nil
                 }
+            } else if didCheckActiveShift {
+                landingView
+            } else {
+                Color.clear
             }
-            .toolbar(activeShift == nil ? .visible : .hidden, for: .navigationBar)
         }
         .task {
             activeShift = ShiftStore.active()

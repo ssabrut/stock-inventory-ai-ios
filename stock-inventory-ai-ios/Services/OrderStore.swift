@@ -63,6 +63,18 @@ enum OrderStore {
         }
     }
 
+    /// Every order ever rung up, most recent first — the Riwayat Pesanan
+    /// screen's data source.
+    static func all() -> [Order] {
+        context.performAndWait {
+            let request = OrderEntity.fetchRequest()
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \OrderEntity.date, ascending: false)]
+
+            guard let orderEntities = try? context.fetch(request) else { return [] }
+            return orderEntities.map { $0.asOrder(items: items(forOrder: $0.id ?? UUID())) }
+        }
+    }
+
     /// All orders rung up during a given shift, most recent first.
     static func forShift(_ shiftId: UUID) -> [Order] {
         context.performAndWait {
