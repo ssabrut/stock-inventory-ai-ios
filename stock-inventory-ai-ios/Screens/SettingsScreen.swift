@@ -82,6 +82,12 @@ struct SettingsScreen: View {
                 Button("Hapus Semua Data Menu POS", role: .destructive) {
                     showDeleteAllMenuConfirm = true
                 }
+
+                #if DEBUG
+                Button("Isi Data Dummy (Debug)") {
+                    seedDummyData()
+                }
+                #endif
             } header: {
                 Label("Danger Zone", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -176,6 +182,13 @@ struct SettingsScreen: View {
         MenuStore.deleteAll()
         successMessage = "Semua data menu POS berhasil dihapus."
     }
+
+    #if DEBUG
+    private func seedDummyData() {
+        DevSeeder.seed()
+        successMessage = "Data dummy berhasil ditambahkan."
+    }
+    #endif
 
     private static func formatBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
