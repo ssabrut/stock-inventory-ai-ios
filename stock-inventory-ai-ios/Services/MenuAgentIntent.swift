@@ -434,11 +434,85 @@ struct MenuSnippetView: View {
     }
 }
 
-struct MenuAppShortcuts: AppShortcutsProvider {
-    /// Each pinned-action shortcut bakes its `action` into the intent itself
-    /// (via `MenuAgentIntent(action:)`) rather than relying on phrase-
-    /// parameter binding — same reasoning as `StockAppShortcuts`.
+/// App-wide Siri shortcuts. Only one `AppShortcutsProvider` conformance is
+/// allowed per app, so this holds all ten shortcuts (five stock, five menu)
+/// directly — `AppShortcutsBuilder` combines bare `AppShortcut` statements
+/// only, with no support for arrays or loops, so they can't be assembled as
+/// two separate lists and merged here.
+///
+/// Each pinned-action shortcut bakes its `action` into the corresponding
+/// intent (`StockAgentIntent(action:)` / `MenuAgentIntent(action:)`) rather
+/// than relying on phrase-parameter binding — Siri can't bind a free-text
+/// parameter inline, and a 5-case enum reads more naturally as separate
+/// literal phrase groups than as `\(\.$action)` substitution. That's what
+/// lets "Check stock in Invent" resolve in one turn straight to checkStock,
+/// no follow-up ask for *which* action. Each type's final entry (default
+/// `init()`, action = .ask) is the open-ended fallback for any phrasing not
+/// covered by the pinned ones — currently disabled, see
+/// `StockAgentIntent.perform` / `MenuAgentIntent.perform`.
+///
+/// `detailPhrase` is a plain `String?`, and AppIntents only allows inline
+/// phrase-parameter capture (`\(\.$foo)`) for `AppEntity`/`AppEnum`
+/// parameters — binding a `String?` that way fails the build ("Invalid
+/// parameter type"), so item-name capture happens via `requestValue`
+/// follow-ups in `perform()` instead, not inline here.
+struct InventAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: StockAgentIntent(action: .checkStock),
+            phrases: [
+                "\(.applicationName) check stock",
+                "Check stock in \(.applicationName)",
+                "Check stock on \(.applicationName)",
+                "Check my stock in \(.applicationName)",
+                "Check my stock on \(.applicationName)",
+                "How much stock do I have in \(.applicationName)",
+                "How much stock do I have on \(.applicationName)"
+            ],
+            shortTitle: "Check Stock",
+            systemImageName: "shippingbox.fill"
+        )
+        AppShortcut(
+            intent: StockAgentIntent(action: .addStock),
+            phrases: [
+                "\(.applicationName) add stock",
+                "Add stock in \(.applicationName)",
+                "Add stock on \(.applicationName)",
+                "Add stock using \(.applicationName)",
+                "I want to add stock in \(.applicationName)",
+                "I want to add stock on \(.applicationName)"
+            ],
+            shortTitle: "Add Stock",
+            systemImageName: "shippingbox.fill"
+        )
+        AppShortcut(
+            intent: StockAgentIntent(action: .updateStock),
+            phrases: [
+                "\(.applicationName) update stock",
+                "Update stock in \(.applicationName)",
+                "Update stock on \(.applicationName)"
+            ],
+            shortTitle: "Update Stock",
+            systemImageName: "shippingbox.fill"
+        )
+        AppShortcut(
+            intent: StockAgentIntent(action: .deleteStock),
+            phrases: [
+                "\(.applicationName) delete stock",
+                "Delete stock in \(.applicationName)",
+                "Delete stock on \(.applicationName)"
+            ],
+            shortTitle: "Delete Stock",
+            systemImageName: "shippingbox.fill"
+        )
+        AppShortcut(
+            intent: StockAgentIntent(),
+            phrases: [
+                "Ask \(.applicationName)"
+            ],
+            shortTitle: "Ask Invent",
+            systemImageName: "shippingbox.fill"
+        )
         AppShortcut(
             intent: MenuAgentIntent(action: .checkMenu),
             phrases: [
@@ -448,13 +522,7 @@ struct MenuAppShortcuts: AppShortcutsProvider {
                 "Check my menu in \(.applicationName)",
                 "Check my menu on \(.applicationName)",
                 "What's on the menu in \(.applicationName)",
-                "What's on the menu on \(.applicationName)",
-                // Inline free-text capture into `detailPhrase` — same
-                // reasoning as StockAppShortcuts' equivalent phrases.
-                "Check \(\.$detailPhrase) menu in \(.applicationName)",
-                "Check \(\.$detailPhrase) menu on \(.applicationName)",
-                "How much is \(\.$detailPhrase) in \(.applicationName)",
-                "How much is \(\.$detailPhrase) on \(.applicationName)"
+                "What's on the menu on \(.applicationName)"
             ],
             shortTitle: "Check Menu",
             systemImageName: "fork.knife"
