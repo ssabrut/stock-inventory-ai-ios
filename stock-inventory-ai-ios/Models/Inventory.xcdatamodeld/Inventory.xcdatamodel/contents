@@ -13,8 +13,23 @@
         <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="itemName" attributeType="String"/>
+        <attribute name="note" optional="YES" attributeType="String"/>
         <attribute name="quantity" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="type" attributeType="String"/>
+        <attribute name="unit" attributeType="String"/>
+    </entity>
+    <entity name="OpnameSessionEntity" representedClassName="OpnameSessionEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="note" optional="YES" attributeType="String"/>
+    </entity>
+    <entity name="OpnameSessionItemEntity" representedClassName="OpnameSessionItemEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="costPerUnit" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="countedQty" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="itemName" attributeType="String"/>
+        <attribute name="sessionId" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="systemQty" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="unit" attributeType="String"/>
     </entity>
     <entity name="MenuItemEntity" representedClassName="MenuItemEntity" syncable="YES" codeGenerationType="class">

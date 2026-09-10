@@ -41,6 +41,21 @@ struct StockTransaction: Identifiable, Codable {
     let costPerUnit: Double
     let type: Kind
     let date: Date
+    /// Optional label for what generated this transaction, e.g. "Opname" for
+    /// a stock-count adjustment — shown in History to distinguish it from a
+    /// regular purchase/use. Nil for ordinary add/use transactions.
+    let note: String?
+
+    init(id: UUID, itemName: String, quantity: Double, unit: String, costPerUnit: Double, type: Kind, date: Date, note: String? = nil) {
+        self.id = id
+        self.itemName = itemName
+        self.quantity = quantity
+        self.unit = unit
+        self.costPerUnit = costPerUnit
+        self.type = type
+        self.date = date
+        self.note = note
+    }
 
     /// Total cost of this transaction — for a `.remove` this is its
     /// contribution to COGS.
@@ -182,10 +197,10 @@ enum StockStore {
     /// entry's running weighted-average cost. Logs a `.add` transaction so
     /// History/COGS has a permanent record.
     @discardableResult
-    static func add(itemName: String, quantity: Double, unit: String, totalCost: Double = 0, date: Date = .now) -> StockEntry {
+    static func add(itemName: String, quantity: Double, unit: String, totalCost: Double = 0, date: Date = .now, note: String? = nil) -> StockEntry {
         context.performAndWait {
             let costPerUnit = quantity > 0 ? totalCost / quantity : 0
-            logTransaction(itemName: itemName, quantity: quantity, unit: unit, costPerUnit: costPerUnit, type: .add, date: date)
+            logTransaction(itemName: itemName, quantity: quantity, unit: unit, costPerUnit: costPerUnit, type: .add, date: date, note: note)
 
             if let existing = mergeCandidate(itemName: itemName, unit: unit),
                let existingUnit = existing.unit,
@@ -286,7 +301,7 @@ enum StockStore {
     /// `delete`, which is a data correction and logs no transaction. Returns
     /// false (no-op) if `quantity` exceeds what's on hand.
     @discardableResult
-    static func use(id: UUID, quantity: Double, date: Date = .now) -> Bool {
+    static func use(id: UUID, quantity: Double, date: Date = .now, note: String? = nil) -> Bool {
         context.performAndWait {
             let request = StockEntryEntity.fetchRequest()
             request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
@@ -297,7 +312,7 @@ enum StockStore {
                   let itemName = entity.itemName, let unit = entity.unit
             else { return false }
 
-            logTransaction(itemName: itemName, quantity: quantity, unit: unit, costPerUnit: entity.costPerUnit, type: .remove, date: date)
+            logTransaction(itemName: itemName, quantity: quantity, unit: unit, costPerUnit: entity.costPerUnit, type: .remove, date: date, note: note)
 
             entity.quantity -= quantity
             if entity.quantity <= 0 {
@@ -311,8 +326,8 @@ enum StockStore {
 
     /// Callers must already be running inside `context.performAndWait`.
     @discardableResult
-    private static func logTransaction(itemName: String, quantity: Double, unit: String, costPerUnit: Double, type: StockTransaction.Kind, date: Date) -> StockTransaction {
-        let transaction = StockTransaction(id: UUID(), itemName: itemName, quantity: quantity, unit: unit, costPerUnit: costPerUnit, type: type, date: date)
+    private static func logTransaction(itemName: String, quantity: Double, unit: String, costPerUnit: Double, type: StockTransaction.Kind, date: Date, note: String? = nil) -> StockTransaction {
+        let transaction = StockTransaction(id: UUID(), itemName: itemName, quantity: quantity, unit: unit, costPerUnit: costPerUnit, type: type, date: date, note: note)
 
         let entity = StockTransactionEntity(context: context)
         entity.id = transaction.id
@@ -322,6 +337,7 @@ enum StockStore {
         entity.costPerUnit = transaction.costPerUnit
         entity.type = transaction.type.rawValue
         entity.date = transaction.date
+        entity.note = transaction.note
 
         try? context.save()
         return transaction
@@ -412,7 +428,8 @@ private extension StockTransactionEntity {
             unit: unit,
             costPerUnit: costPerUnit,
             type: type,
-            date: date ?? .now
+            date: date ?? .now,
+            note: note
         )
     }
 }

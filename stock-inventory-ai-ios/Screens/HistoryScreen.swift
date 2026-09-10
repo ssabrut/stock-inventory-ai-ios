@@ -150,8 +150,18 @@ private struct TransactionRow: View {
                 .foregroundStyle(isAdd ? .green : .orange)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.itemName)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(transaction.itemName)
+                        .font(.headline)
+                    if let note = transaction.note {
+                        Text(note)
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.gray.opacity(0.15)))
+                    }
+                }
                 Text(transaction.date, style: .date)
                     .font(.caption)
                     .foregroundStyle(.secondary)

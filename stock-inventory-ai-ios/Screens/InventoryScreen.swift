@@ -15,6 +15,7 @@ struct InventoryScreen: View {
     @State private var editingEntry: StockEntryEntity?
     @State private var isAddingNew = false
     @State private var usingEntry: StockEntryEntity?
+    @State private var isOpnameActive = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -25,6 +26,12 @@ struct InventoryScreen: View {
                 Text("\(entries.count) item")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                Button {
+                    isOpnameActive = true
+                } label: {
+                    Label("Stock Opname", systemImage: "checklist")
+                }
+                .buttonStyle(.bordered)
                 Button {
                     isAddingNew = true
                 } label: {
@@ -81,6 +88,9 @@ struct InventoryScreen: View {
         }
         .sheet(item: $usingEntry) { entry in
             UseStockSheet(entry: entry)
+        }
+        .sheet(isPresented: $isOpnameActive) {
+            OpnameScreen()
         }
     }
 
