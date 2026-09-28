@@ -12,26 +12,12 @@ struct ChatMessage: Identifiable {
 }
 
 struct ChatScreen: View {
-    @State private var chatModel = ChatModel(modelURL: Self.resolveModelURL())
+    private var chatModel = ChatModel.shared
 
     @State private var messages: [ChatMessage] = [
         ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu hari ini?")
     ]
     @State private var draft: String = ""
-
-    /// Temporary diagnostic — prints Bundle.main's top-level contents so we
-    /// can see exactly what's actually bundled at runtime, instead of
-    /// crashing blind on a force-unwrap. Remove once the resource is
-    /// confirmed resolving correctly.
-    private static func resolveModelURL() -> URL {
-        let name = "qwen3_0_6b_mixed_4bit_8bit_static"
-        if let url = Bundle.main.url(forResource: name, withExtension: nil) {
-            print("[ChatScreen] Found model at:", url.path)
-            return url
-        }
-
-        fatalError("Model resource '\(name)' not found in bundle — see console output above.")
-    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -88,6 +74,10 @@ struct ChatScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
+            // The model outlives this screen, but the on-screen history
+            // doesn't — start the model's side fresh too so they match.
+            chatModel.startNewConversation()
+            // Normally already loaded/loading from app launch; no-op then.
             await chatModel.loadIfNeeded()
         }
     }
