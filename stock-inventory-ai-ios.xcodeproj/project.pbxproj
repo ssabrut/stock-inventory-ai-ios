@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A78017CD304A6933003646D6 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = A78017CC304A6933003646D6 /* MLXLLM */; };
-		A78017CF304A6933003646D6 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = A78017CE304A6933003646D6 /* MLXLMCommon */; };
-		A78017EE304A8679003646D6 /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = A78017ED304A8679003646D6 /* Hub */; };
-		A78017F0304A8679003646D6 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017EF304A8679003646D6 /* Tokenizers */; };
-		A78017F2304A8679003646D6 /* Transformers in Frameworks */ = {isa = PBXBuildFile; productRef = A78017F1304A8679003646D6 /* Transformers */; };
+		A743A9FF306A515500336F18 /* CoreAIDiffusion in Frameworks */ = {isa = PBXBuildFile; productRef = A743A9FE306A515500336F18 /* CoreAIDiffusion */; };
+		A743AA01306A515500336F18 /* CoreAILM in Frameworks */ = {isa = PBXBuildFile; productRef = A743AA00306A515500336F18 /* CoreAILM */; };
+		A743AA03306A515500336F18 /* CoreAIObjectDetection in Frameworks */ = {isa = PBXBuildFile; productRef = A743AA02306A515500336F18 /* CoreAIObjectDetection */; };
+		A743AA05306A515500336F18 /* CoreAISegmentation in Frameworks */ = {isa = PBXBuildFile; productRef = A743AA04306A515500336F18 /* CoreAISegmentation */; };
+		A743AA07306A515500336F18 /* CoreAISpeech in Frameworks */ = {isa = PBXBuildFile; productRef = A743AA06306A515500336F18 /* CoreAISpeech */; };
+		A743AA09306A515500336F18 /* CoreAIVideoDiffusion in Frameworks */ = {isa = PBXBuildFile; productRef = A743AA08306A515500336F18 /* CoreAIVideoDiffusion */; };
+		A743AA0B306A515500336F18 /* CoreAIVideoSegmentation in Frameworks */ = {isa = PBXBuildFile; productRef = A743AA0A306A515500336F18 /* CoreAIVideoSegmentation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +34,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A735B33D306A433300C4C96B /* Exceptions for "stock-inventory-ai-ios" folder in "stock-inventory-ai-iosTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Services/ChatModel.swift,
+			);
+			target = A758114D304E611800ACF9C8 /* stock-inventory-ai-iosTests */;
+		};
 		A7CD59343051024C00B8312C /* Exceptions for "stock-inventory-ai-ios" folder in "stock-inventory-ai-ios" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -46,6 +55,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				A7CD59343051024C00B8312C /* Exceptions for "stock-inventory-ai-ios" folder in "stock-inventory-ai-ios" target */,
+				A735B33D306A433300C4C96B /* Exceptions for "stock-inventory-ai-ios" folder in "stock-inventory-ai-iosTests" target */,
 			);
 			path = "stock-inventory-ai-ios";
 			sourceTree = "<group>";
@@ -55,6 +65,15 @@
 			path = "stock-inventory-ai-iosTests";
 			sourceTree = "<group>";
 		};
+		A7B16CF9306A578300A60495 /* exports */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFolders = (
+				qwen3_0_6b_mixed_4bit_8bit_static,
+			);
+			name = exports;
+			path = "../coreai-models/exports";
+			sourceTree = SOURCE_ROOT;
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,11 +81,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A78017F0304A8679003646D6 /* Tokenizers in Frameworks */,
-				A78017EE304A8679003646D6 /* Hub in Frameworks */,
-				A78017F2304A8679003646D6 /* Transformers in Frameworks */,
-				A78017CF304A6933003646D6 /* MLXLMCommon in Frameworks */,
-				A78017CD304A6933003646D6 /* MLXLLM in Frameworks */,
+				A743AA03306A515500336F18 /* CoreAIObjectDetection in Frameworks */,
+				A743AA09306A515500336F18 /* CoreAIVideoDiffusion in Frameworks */,
+				A743AA01306A515500336F18 /* CoreAILM in Frameworks */,
+				A743AA0B306A515500336F18 /* CoreAIVideoSegmentation in Frameworks */,
+				A743AA07306A515500336F18 /* CoreAISpeech in Frameworks */,
+				A743A9FF306A515500336F18 /* CoreAIDiffusion in Frameworks */,
+				A743AA05306A515500336F18 /* CoreAISegmentation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -83,6 +104,7 @@
 		A73FE19530471DE800FD3456 = {
 			isa = PBXGroup;
 			children = (
+				A7B16CF9306A578300A60495 /* exports */,
 				A7581159304E625600ACF9C8 /* stock-inventory-ai-ios.xctestplan */,
 				A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */,
 				A758114F304E611800ACF9C8 /* stock-inventory-ai-iosTests */,
@@ -125,14 +147,17 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A73FE1A030471DE800FD3456 /* stock-inventory-ai-ios */,
+				A7B16CF9306A578300A60495 /* exports */,
 			);
 			name = "stock-inventory-ai-ios";
 			packageProductDependencies = (
-				A78017CC304A6933003646D6 /* MLXLLM */,
-				A78017CE304A6933003646D6 /* MLXLMCommon */,
-				A78017ED304A8679003646D6 /* Hub */,
-				A78017EF304A8679003646D6 /* Tokenizers */,
-				A78017F1304A8679003646D6 /* Transformers */,
+				A743A9FE306A515500336F18 /* CoreAIDiffusion */,
+				A743AA00306A515500336F18 /* CoreAILM */,
+				A743AA02306A515500336F18 /* CoreAIObjectDetection */,
+				A743AA04306A515500336F18 /* CoreAISegmentation */,
+				A743AA06306A515500336F18 /* CoreAISpeech */,
+				A743AA08306A515500336F18 /* CoreAIVideoDiffusion */,
+				A743AA0A306A515500336F18 /* CoreAIVideoSegmentation */,
 			);
 			productName = "stock-inventory-ai-ios";
 			productReference = A73FE19E30471DE800FD3456 /* stock-inventory-ai-ios.app */;
@@ -176,6 +201,7 @@
 					};
 					A758114D304E611800ACF9C8 = {
 						CreatedOnToolsVersion = 26.6;
+						LastSwiftMigration = 2700;
 						TestTargetID = A73FE19D30471DE800FD3456;
 					};
 				};
@@ -190,8 +216,7 @@
 			mainGroup = A73FE19530471DE800FD3456;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
-				A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */,
+				A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A73FE19F30471DE800FD3456 /* Products */;
@@ -392,7 +417,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -432,7 +457,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -454,16 +479,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9NQQM8PHBZ;
 				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.meeko.stock-inventory-ai-iosTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -475,10 +503,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9NQQM8PHBZ;
 				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.meeko.stock-inventory-ai-iosTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -525,49 +555,51 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+		A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples";
+			repositoryURL = "https://github.com/apple/coreai-models";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.29.1;
-			};
-		};
-		A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/huggingface/swift-transformers";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
+				branch = main;
+				kind = branch;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A78017CC304A6933003646D6 /* MLXLLM */ = {
+		A743A9FE306A515500336F18 /* CoreAIDiffusion */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
-			productName = MLXLLM;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAIDiffusion;
 		};
-		A78017CE304A6933003646D6 /* MLXLMCommon */ = {
+		A743AA00306A515500336F18 /* CoreAILM */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A78017CA304A68BA003646D6 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
-			productName = MLXLMCommon;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAILM;
 		};
-		A78017ED304A8679003646D6 /* Hub */ = {
+		A743AA02306A515500336F18 /* CoreAIObjectDetection */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */;
-			productName = Hub;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAIObjectDetection;
 		};
-		A78017EF304A8679003646D6 /* Tokenizers */ = {
+		A743AA04306A515500336F18 /* CoreAISegmentation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */;
-			productName = Tokenizers;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAISegmentation;
 		};
-		A78017F1304A8679003646D6 /* Transformers */ = {
+		A743AA06306A515500336F18 /* CoreAISpeech */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A78017EC304A8679003646D6 /* XCRemoteSwiftPackageReference "swift-transformers" */;
-			productName = Transformers;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAISpeech;
+		};
+		A743AA08306A515500336F18 /* CoreAIVideoDiffusion */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAIVideoDiffusion;
+		};
+		A743AA0A306A515500336F18 /* CoreAIVideoSegmentation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A743A9FD306A514B00336F18 /* XCRemoteSwiftPackageReference "coreai-models" */;
+			productName = CoreAIVideoSegmentation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
