@@ -5,10 +5,30 @@
 
 import SwiftUI
 
+/// Placeholder value type standing in for a real data-layer transaction
+/// record until the backend is rebuilt — same shape callers expect.
+struct StockTransactionRecord: Identifiable {
+    enum Kind {
+        case add
+        case remove
+    }
+
+    let id = UUID()
+    let itemName: String
+    let quantity: Double
+    let unit: String
+    let costPerUnit: Double
+    let type: Kind
+    let date: Date
+    let note: String?
+
+    var totalCost: Double { quantity * costPerUnit }
+}
+
 /// Shows every stock transaction (add + use/sell) and the resulting cost of
 /// goods sold — unlike Stok Bahan, which only shows the current merged
-/// quantity per item, this is the permanent event log StockStore.add/use
-/// write to, so nothing here changes when entries merge.
+/// quantity per item, this is the permanent event log the data layer writes
+/// to, so nothing here changes when entries merge.
 struct HistoryScreen: View {
     private enum PeriodFilter: String, CaseIterable, Identifiable {
         case all, month, week
@@ -32,10 +52,10 @@ struct HistoryScreen: View {
         }
     }
 
-    @State private var transactions: [StockTransaction] = []
+    @State private var transactions: [StockTransactionRecord] = []
     @State private var period: PeriodFilter = .month
 
-    private var filteredTransactions: [StockTransaction] {
+    private var filteredTransactions: [StockTransactionRecord] {
         guard let start = period.startDate else { return transactions }
         return transactions.filter { $0.date >= start }
     }
@@ -85,7 +105,6 @@ struct HistoryScreen: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear(perform: refresh)
     }
 
     private var summaryCards: some View {
@@ -93,10 +112,6 @@ struct HistoryScreen: View {
             SummaryCard(title: "HPP (Terpakai)", value: cogs, tint: .orange)
             SummaryCard(title: "Total Pembelian", value: purchaseTotal, tint: .green)
         }
-    }
-
-    private func refresh() {
-        transactions = StockStore.allTransactions()
     }
 }
 
@@ -132,7 +147,7 @@ private struct SummaryCard: View {
 }
 
 private struct TransactionRow: View {
-    let transaction: StockTransaction
+    let transaction: StockTransactionRecord
 
     private var isAdd: Bool { transaction.type == .add }
 

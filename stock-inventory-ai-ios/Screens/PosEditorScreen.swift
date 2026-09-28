@@ -7,7 +7,6 @@ import SwiftUI
 
 struct PosEditorScreen: View {
     @State private var activeShift: Shift?
-    @State private var didCheckActiveShift = false
 
     var body: some View {
         NavigationStack {
@@ -15,15 +14,9 @@ struct PosEditorScreen: View {
                 PosSaleScreen(shift: shift) {
                     activeShift = nil
                 }
-            } else if didCheckActiveShift {
-                landingView
             } else {
-                Color.clear
+                landingView
             }
-        }
-        .task {
-            activeShift = ShiftStore.active()
-            didCheckActiveShift = true
         }
     }
 
@@ -52,7 +45,7 @@ struct PosEditorScreen: View {
 
                 VStack(spacing: 12) {
                     Button {
-                        activeShift = ShiftStore.start()
+                        activeShift = Shift(id: UUID(), shiftStart: .now, shiftEnd: nil)
                     } label: {
                         Text("Mulai Shift")
                             .font(.headline)
@@ -101,7 +94,6 @@ private struct EditPosScreen: View {
             }
         }
         .navigationTitle("Edit POS")
-        .task { reload() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -113,14 +105,14 @@ private struct EditPosScreen: View {
         }
         .sheet(item: $itemToEdit) { item in
             MenuItemEditorSheet(item: item) { updated in
-                MenuStore.update(updated)
-                reload()
+                if let index = menuItems.firstIndex(where: { $0.id == updated.id }) {
+                    menuItems[index] = updated
+                }
             }
         }
         .sheet(isPresented: $isPresentingNewItem) {
             MenuItemEditorSheet(item: nil) { newItem in
-                MenuStore.add(name: newItem.name, price: newItem.price, category: newItem.category, icon: newItem.icon)
-                reload()
+                menuItems.append(newItem)
             }
         }
         .alert("Hapus menu ini?", isPresented: .init(
@@ -130,8 +122,7 @@ private struct EditPosScreen: View {
             Button("Batal", role: .cancel) { itemToDelete = nil }
             Button("Hapus", role: .destructive) {
                 if let item = itemToDelete {
-                    MenuStore.delete(id: item.id)
-                    reload()
+                    menuItems.removeAll { $0.id == item.id }
                 }
                 itemToDelete = nil
             }
@@ -140,10 +131,6 @@ private struct EditPosScreen: View {
                 Text("\(item.name) akan dihapus dari menu.")
             }
         }
-    }
-
-    private func reload() {
-        menuItems = MenuStore.all()
     }
 
     private var menuList: some View {

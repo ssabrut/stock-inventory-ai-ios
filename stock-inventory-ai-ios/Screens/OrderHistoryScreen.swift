@@ -66,7 +66,6 @@ struct OrderHistoryScreen: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear(perform: refresh)
     }
 
     private var summaryCard: some View {
@@ -84,22 +83,6 @@ struct OrderHistoryScreen: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.green.opacity(0.1))
         )
-    }
-
-    private func refresh() {
-        let orders = OrderStore.all()
-        let ordersByShift = Dictionary(grouping: orders, by: \.shiftId)
-
-        shiftGroups = ShiftStore.all()
-            .compactMap { shift in
-                guard let ordersForShift = ordersByShift[shift.id], !ordersForShift.isEmpty else { return nil }
-                return ShiftGroup(shift: shift, orders: ordersForShift)
-            }
-            .sorted { $0.shift.shiftStart > $1.shift.shiftStart }
-
-        if expandedShiftIds.isEmpty, let mostRecent = shiftGroups.first {
-            expandedShiftIds.insert(mostRecent.id)
-        }
     }
 
     private func binding(for shiftId: UUID) -> Binding<Bool> {

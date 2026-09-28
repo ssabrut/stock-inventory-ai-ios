@@ -5,12 +5,34 @@
 
 import SwiftUI
 
+/// One counted item within an opname session — the system's recorded
+/// quantity at count time vs. what was physically counted. `diffQty` is
+/// signed: positive means a surplus, negative a shortage.
+struct OpnameSessionItem: Identifiable, Codable {
+    let id: UUID
+    let itemName: String
+    let unit: String
+    let systemQty: Double
+    var countedQty: Double
+    let costPerUnit: Double
+
+    init(id: UUID = UUID(), itemName: String, unit: String, systemQty: Double, countedQty: Double, costPerUnit: Double) {
+        self.id = id
+        self.itemName = itemName
+        self.unit = unit
+        self.systemQty = systemQty
+        self.countedQty = countedQty
+        self.costPerUnit = costPerUnit
+    }
+
+    var diffQty: Double { countedQty - systemQty }
+}
+
 /// Stock opname (physical count) sheet, launched from Stok Bahan. Lists
 /// every current entry with its recorded quantity next to an editable
 /// "counted" field; on save, any item whose count differs from system stock
-/// is applied as an adjustment via OpnameStore, which logs it as a tagged
-/// StockTransaction so History can tell it apart from a normal
-/// purchase/use.
+/// is applied as an adjustment, tagged so History can tell it apart from a
+/// normal purchase/use.
 struct OpnameScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var items: [OpnameSessionItem] = []
@@ -65,14 +87,9 @@ struct OpnameScreen: View {
                 }
             }
         }
-        .onAppear {
-            items = OpnameStore.startSession()
-        }
     }
 
     private func save() {
-        let trimmedNote = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        OpnameStore.commitSession(items: items, note: trimmedNote.isEmpty ? nil : trimmedNote)
         dismiss()
     }
 }
@@ -150,5 +167,4 @@ private struct OpnameItemRow: View {
 
 #Preview {
     OpnameScreen()
-        .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
 }

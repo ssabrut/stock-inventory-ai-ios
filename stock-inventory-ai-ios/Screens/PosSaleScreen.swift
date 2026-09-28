@@ -43,12 +43,10 @@ struct PosSaleScreen: View {
                     .frame(maxWidth: 340, maxHeight: .infinity)
             }
         }
-        .task { reload() }
         .toolbar(.hidden, for: .navigationBar)
         .alert("Akhiri shift ini?", isPresented: $showEndShiftConfirm) {
             Button("Batal", role: .cancel) {}
             Button("Akhiri", role: .destructive) {
-                ShiftStore.end(id: shift.id)
                 onEndShift()
             }
         } message: {
@@ -62,10 +60,6 @@ struct PosSaleScreen: View {
         } message: {
             Text(checkoutSuccessMessage ?? "")
         }
-    }
-
-    private func reload() {
-        menuItems = MenuStore.all()
     }
 
     private var header: some View {
@@ -233,8 +227,7 @@ struct PosSaleScreen: View {
 
     private func checkout() {
         guard !cartItems.isEmpty else { return }
-        let order = OrderStore.checkout(shiftId: shift.id, items: cartItems)
-        checkoutSuccessMessage = "Total \(order.total.formatted(.currency(code: "IDR").precision(.fractionLength(0)))) berhasil disimpan."
+        checkoutSuccessMessage = "Total \(total.formatted(.currency(code: "IDR").precision(.fractionLength(0)))) berhasil disimpan."
         cartItems.removeAll()
     }
 }

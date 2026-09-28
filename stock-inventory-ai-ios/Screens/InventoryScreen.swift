@@ -3,18 +3,38 @@
 //  stock-inventory-ai-ios
 //
 
-import CoreData
 import SwiftUI
 
-struct InventoryScreen: View {
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \StockEntryEntity.itemName, ascending: true)]
-    )
-    private var entries: FetchedResults<StockEntryEntity>
+/// Placeholder value type standing in for a real data-layer stock entry
+/// until the backend is rebuilt.
+struct StockEntryRecord: Identifiable {
+    let id: UUID
+    var itemName: String
+    var quantity: Double
+    var unit: String
+    var date: Date
+    var costPerUnit: Double
 
-    @State private var editingEntry: StockEntryEntity?
+    init(id: UUID = UUID(), itemName: String, quantity: Double, unit: String, date: Date = .now, costPerUnit: Double = 0) {
+        self.id = id
+        self.itemName = itemName
+        self.quantity = quantity
+        self.unit = unit
+        self.date = date
+        self.costPerUnit = costPerUnit
+    }
+}
+
+/// Canonical unit options shown in the stock entry form's picker.
+enum StockUnits {
+    static let canonical = ["kg", "gram", "liter", "ml", "pcs", "box", "ikat"]
+}
+
+struct InventoryScreen: View {
+    @State private var entries: [StockEntryRecord] = []
+    @State private var editingEntry: StockEntryRecord?
     @State private var isAddingNew = false
-    @State private var usingEntry: StockEntryEntity?
+    @State private var usingEntry: StockEntryRecord?
     @State private var isOpnameActive = false
 
     var body: some View {
@@ -81,31 +101,42 @@ struct InventoryScreen: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(item: $editingEntry) { entry in
-            StockEntryFormSheet(mode: .edit(entry))
+            StockEntryFormSheet(mode: .edit(entry)) { updated in
+                if let index = entries.firstIndex(where: { $0.id == updated.id }) {
+                    entries[index] = updated
+                }
+            }
         }
         .sheet(isPresented: $isAddingNew) {
-            StockEntryFormSheet(mode: .create)
+            StockEntryFormSheet(mode: .create) { created in
+                entries.append(created)
+            }
         }
         .sheet(item: $usingEntry) { entry in
-            UseStockSheet(entry: entry)
+            UseStockSheet(entry: entry) { used, quantity in
+                if let index = entries.firstIndex(where: { $0.id == used.id }) {
+                    entries[index].quantity -= quantity
+                    if entries[index].quantity <= 0 {
+                        entries.remove(at: index)
+                    }
+                }
+            }
         }
         .sheet(isPresented: $isOpnameActive) {
             OpnameScreen()
         }
     }
 
-    private func delete(_ entry: StockEntryEntity) {
-        guard let id = entry.id else { return }
-        StockStore.delete(id: id)
+    private func delete(_ entry: StockEntryRecord) {
+        entries.removeAll { $0.id == entry.id }
     }
 }
 
-/// "Pakai" (use/sell) sheet — records stock going out at its current
-/// weighted-average cost, logging a `.remove` transaction that feeds COGS.
-/// Kept separate from the edit form since this is a usage event, not a data
-/// correction (see StockStore.use vs StockStore.update/delete).
+/// "Pakai" (use/sell) sheet — records stock going out. Kept separate from the
+/// edit form since this is a usage event, not a data correction.
 private struct UseStockSheet: View {
-    let entry: StockEntryEntity
+    let entry: StockEntryRecord
+    let onUse: (StockEntryRecord, Double) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var quantityText: String = ""
@@ -127,7 +158,7 @@ private struct UseStockSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Stok saat ini", value: "\(formatQuantity(availableQuantity)) \(entry.unit ?? "")")
+                    LabeledContent("Stok saat ini", value: "\(formatQuantity(availableQuantity)) \(entry.unit)")
                     TextField("Jumlah terpakai", text: $quantityText)
                         .keyboardType(.decimalPad)
                 } footer: {
@@ -143,7 +174,7 @@ private struct UseStockSheet: View {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Pakai \(entry.itemName ?? "")")
+            .navigationTitle("Pakai \(entry.itemName)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -158,11 +189,8 @@ private struct UseStockSheet: View {
     }
 
     private func save() {
-        guard let id = entry.id, let quantity = parsedQuantity else { return }
-        guard StockStore.use(id: id, quantity: quantity) else {
-            errorMessage = "Gagal menyimpan. Coba lagi."
-            return
-        }
+        guard let quantity = parsedQuantity else { return }
+        onUse(entry, quantity)
         dismiss()
     }
 }
@@ -192,19 +220,17 @@ private struct InventoryTableHeader: View {
 }
 
 private struct InventoryRow: View {
-    let entry: StockEntryEntity
+    let entry: StockEntryRecord
 
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.itemName ?? "")
+                Text(entry.itemName)
                     .font(.subheadline.bold())
                     .lineLimit(1)
-                if let date = entry.date {
-                    Text(date, style: .date)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                Text(entry.date, style: .date)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -212,7 +238,7 @@ private struct InventoryRow: View {
                 .font(.subheadline)
                 .frame(width: InventoryColumn.quantity, alignment: .trailing)
 
-            Text(entry.unit ?? "")
+            Text(entry.unit)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(width: InventoryColumn.unit, alignment: .leading)
@@ -222,23 +248,20 @@ private struct InventoryRow: View {
     }
 }
 
-/// Shared create/edit form. StockEntryEntity is a live Core Data object, not
-/// a value type, so .edit holds it just for its id/prefill values — all
-/// writes go through StockStore rather than mutating the entity directly, to
-/// stay consistent with how the Siri/voice flow writes (and to keep this
-/// screen's Core Data usage limited to reads via @FetchRequest).
+/// Shared create/edit form.
 private struct StockEntryFormSheet: View {
     enum Mode {
         case create
-        case edit(StockEntryEntity)
+        case edit(StockEntryRecord)
     }
 
     let mode: Mode
+    let onSave: (StockEntryRecord) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var itemName: String = ""
     @State private var quantityText: String = ""
-    @State private var unit: String = StockPhraseParser.canonicalUnits.first ?? "pcs"
+    @State private var unit: String = StockUnits.canonical.first ?? "pcs"
     @State private var totalCostText: String = ""
     @State private var date: Date = .now
 
@@ -269,7 +292,7 @@ private struct StockEntryFormSheet: View {
                     TextField("Jumlah", text: $quantityText)
                         .keyboardType(.decimalPad)
                     Picker("Satuan", selection: $unit) {
-                        ForEach(StockPhraseParser.canonicalUnits, id: \.self) { option in
+                        ForEach(StockUnits.canonical, id: \.self) { option in
                             Text(option).tag(option)
                         }
                     }
@@ -282,17 +305,6 @@ private struct StockEntryFormSheet: View {
                             .keyboardType(.decimalPad)
                     } footer: {
                         Text("Total biaya untuk jumlah stok ini, mis. Rp150.000 untuk 5kg. Dipakai untuk menghitung rata-rata biaya dan HPP (COGS).")
-                    }
-                }
-
-                if case .edit(let entry) = mode {
-                    Section {
-                        Button("Hapus Item", role: .destructive) {
-                            if let id = entry.id {
-                                StockStore.delete(id: id)
-                            }
-                            dismiss()
-                        }
                     }
                 }
             }
@@ -316,18 +328,12 @@ private struct StockEntryFormSheet: View {
 
     private func prefill() {
         guard case .edit(let entry) = mode else { return }
-        itemName = entry.itemName ?? ""
+        itemName = entry.itemName
         quantityText = formatQuantity(entry.quantity)
-        // Falls back to the first canonical unit if the stored value isn't
-        // one of them (e.g. a legacy entry from before the picker existed),
-        // so the Picker always shows a selected row instead of appearing
-        // blank for an unmatched selection.
-        if let storedUnit = entry.unit, StockPhraseParser.canonicalUnits.contains(storedUnit) {
-            unit = storedUnit
+        if StockUnits.canonical.contains(entry.unit) {
+            unit = entry.unit
         }
-        if let storedDate = entry.date {
-            date = storedDate
-        }
+        date = entry.date
     }
 
     private func save() {
@@ -337,20 +343,20 @@ private struct StockEntryFormSheet: View {
 
         switch mode {
         case .create:
-            // Field holds a batch total; StockStore.add divides by quantity
-            // internally to get cost-per-unit.
             let totalCost = Double(totalCostText) ?? 0
-            StockStore.add(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, totalCost: totalCost, date: date)
+            let costPerUnit = quantity > 0 ? totalCost / quantity : 0
+            onSave(StockEntryRecord(itemName: trimmedName, quantity: quantity, unit: trimmedUnit, date: date, costPerUnit: costPerUnit))
         case .edit(let entry):
-            guard let id = entry.id else { return }
-            // Cost is no longer editable here — pass the entry's existing
-            // costPerUnit straight through unchanged.
-            StockStore.update(id: id, itemName: trimmedName, quantity: quantity, unit: trimmedUnit, costPerUnit: entry.costPerUnit, date: date)
+            var updated = entry
+            updated.itemName = trimmedName
+            updated.quantity = quantity
+            updated.unit = trimmedUnit
+            updated.date = date
+            onSave(updated)
         }
     }
 }
 
 #Preview {
     InventoryScreen()
-        .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
 }

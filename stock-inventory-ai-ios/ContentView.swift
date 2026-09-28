@@ -9,48 +9,31 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selection: AppScreen = .posEditor
-    @State private var llm = LLMService()
-    @State private var didSkipModelLoad = false
-    @State private var hasLoadedOnce = false
     private var navigationState = AppNavigationState.shared
 
     var body: some View {
-        Group {
-            if hasLoadedOnce || didSkipModelLoad {
-                HStack(spacing: 0) {
-                    SidebarView(selection: $selection)
+        HStack(spacing: 0) {
+            SidebarView(selection: $selection)
 
-                    Group {
-                        switch selection {
-                        case .posEditor:
-                            PosEditorScreen()
-                        case .orderHistory:
-                            OrderHistoryScreen()
-                        case .inventory:
-                            InventoryScreen()
-                        case .chat:
-                            ChatScreen(llm: llm)
-                        case .history:
-                            HistoryScreen()
-                        case .settings:
-                            SettingsScreen(llm: llm)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                SplashScreen(state: llm.state) {
-                    didSkipModelLoad = true
+            Group {
+                switch selection {
+                case .posEditor:
+                    PosEditorScreen()
+                case .orderHistory:
+                    OrderHistoryScreen()
+                case .inventory:
+                    InventoryScreen()
+                case .chat:
+                    ChatScreen()
+                case .history:
+                    HistoryScreen()
+                case .settings:
+                    SettingsScreen()
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task {
-            await llm.loadIfNeeded()
-            if llm.state == .ready {
-                hasLoadedOnce = true
-            }
-        }
         // Picks up a screen `StockAgentIntent` requested (e.g. landing on
         // Stok Bahan after a Siri check/add-stock request) — checked on
         // every appearance/foreground, not just cold launch, since
