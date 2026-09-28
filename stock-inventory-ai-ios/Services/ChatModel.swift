@@ -70,6 +70,12 @@ final class ChatModel {
             loadState = .failed(error.localizedDescription)
         }
     }
+    
+    nonisolated static func isModelCached() -> Bool {
+        let aimodel = bundledModelURL()
+            .appending(path: "qwen3_0_6b_mixed_4bit_8bit_static.aimodel")
+        return PreparedModel.isCached(at: aimodel)
+    }
 
     /// Drops the conversation history but keeps the loaded model, so a fresh
     /// chat costs nothing. No-op until loading finishes (which already starts
