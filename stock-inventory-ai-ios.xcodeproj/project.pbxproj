@@ -69,6 +69,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			explicitFolders = (
 				qwen3_0_6b_mixed_4bit_8bit_static,
+				qwen3_1_7b_6bit_static,
 			);
 			name = exports;
 			path = "../coreai-models/exports";

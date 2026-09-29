@@ -4,12 +4,44 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ChatMessage: Identifiable {
     let id = UUID()
     let isUser: Bool
     let text: String
 }
+
+private struct DataReferencePanel: View {
+    let toolCalls: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Data dipakai", systemImage: "shippingbox")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            if toolCalls.isEmpty {
+                Text("Belum ada data yang dicek.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(toolCalls, id: \.self) { call in
+                    Text(call)
+                        .font(.caption.monospaced())
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.gray.opacity(0.12)))
+                }
+            }
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+    }
+}
+
 
 struct ChatScreen: View {
     private var chatModel = ChatModel.shared
@@ -66,7 +98,7 @@ struct ChatScreen: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
 
-            DataReferencePanel()
+            DataReferencePanel(toolCalls: chatModel.lastToolCalls)
                 .frame(width: 200)
                 .padding(.top, 24)
                 .padding(.trailing, 24)
@@ -113,13 +145,22 @@ struct ChatScreen: View {
         guard !text.isEmpty, chatModel.loadState == .ready else { return }
         messages.append(ChatMessage(isUser: true, text: text))
         draft = ""
-        
+
         let replyIndex = messages.count
         messages.append(ChatMessage(isUser: false, text: ""))
-        
+
+        // Ground the model in real stock data even if it skips calling a tool.
+        // The bubble shows what the user typed; only the model sees the facts.
+        let prompt: String
+        if let facts = StockKnowledge.relevantFacts(for: text, in: AppData.container.mainContext) {
+            prompt = "Data stok terkait:\n\(facts)\n\nPertanyaan: \(text)"
+        } else {
+            prompt = text
+        }
+
         Task {
             do {
-                for try await partial in chatModel.streamResponse(to: text) {
+                for try await partial in chatModel.streamResponse(to: prompt) {
                     messages[replyIndex] = ChatMessage(isUser: false, text: partial)
                 }
                 // An empty reply would leave the typing dots spinning forever.
@@ -176,43 +217,6 @@ private struct TypingIndicator: View {
             .frame(height: 18)
         }
         .accessibilityLabel("AI sedang mengetik")
-    }
-}
-
-private struct DataReferencePanel: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "shippingbox")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 4) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(height: 8)
-                }
-            }
-
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.gray.opacity(0.15))
-                .frame(height: 140)
-                .overlay(
-                    VStack(alignment: .leading, spacing: 6) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.gray.opacity(0.4))
-                            .frame(width: 90, height: 8)
-                    }
-                    .padding(12),
-                    alignment: .top
-                )
-
-            Spacer()
-        }
-        .padding(16)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-        )
     }
 }
 

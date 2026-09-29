@@ -18,6 +18,13 @@ import CoreAILanguageModels
 @Observable
 final class ChatModel {
     static let shared = ChatModel(modelURL: ChatModel.bundledModelURL())
+    private static let instructions = """
+    You are the stock assistant for a small Indonesian food business.
+    Always answer in Bahasa Indonesia, short and clear.
+    For ANY question about ingredients, stock, cost or usage, call a tool first. Never guess numbers.
+    Only call record_stock when the user clearly asks to add or use stock.
+    If a tool finds nothing, say so. Never invent ingredients.
+    """
 
     enum LoadState: Equatable {
         case idle
@@ -28,6 +35,7 @@ final class ChatModel {
 
     private(set) var loadState: LoadState = .idle
     private(set) var isGenerating = false
+    private(set) var lastToolCalls: [String] = []
 
     private var model: CoreAILanguageModel?
     private var session: LanguageModelSession?
@@ -43,11 +51,33 @@ final class ChatModel {
     }
 
     private static func bundledModelURL() -> URL {
-        let name = "qwen3_0_6b_mixed_4bit_8bit_static"
+        let name = "qwen3_1_7b_6bit_static"
         guard let url = Bundle.main.url(forResource: name, withExtension: nil) else {
             fatalError("Model resource '\(name)' not found in bundle.")
         }
         return url
+    }
+    
+    private func makeSession(model: CoreAILanguageModel) -> LanguageModelSession {
+        LanguageModelSession(
+            model: model,
+            tools: [
+                SearchStockTool(container: AppData.container),
+                ListStockTool(container: AppData.container),
+                StockHistoryTool(container: AppData.container),
+                RecordStockTool(container: AppData.container)
+            ],
+            instructions: Self.instructions
+        )
+    }
+    
+    private static func toolCallsInLastTurn(_ transcript: Transcript) -> [String] {
+        let entries = Array(transcript)
+        let start = entries.lastIndex { if case .prompt = $0 { true } else { false } } ?? 0
+        return entries[start...].flatMap { entry -> [String] in
+            guard case .toolCalls(let calls) = entry else { return [] }
+            return calls.map { "\($0.toolName) \($0.arguments.jsonString)" }
+        }
     }
 
     /// Slow only the first time after install (or after an iOS update): Core AI
@@ -63,7 +93,7 @@ final class ChatModel {
             let model = try await CoreAILanguageModel(resourcesAt: modelURL, mode: .eager)
             print("[ChatModel] Model loaded in", ContinuousClock.now - start)
             self.model = model
-            session = LanguageModelSession(model: model)
+            session = makeSession(model: model)
             loadState = .ready
         } catch {
             print("[ChatModel] Load failed:", error)
@@ -82,7 +112,7 @@ final class ChatModel {
     /// with a fresh session).
     func startNewConversation() {
         guard let model else { return }
-        session = LanguageModelSession(model: model)
+        session = makeSession(model: model)
     }
     
     func respond(to prompt: String) async throws -> String {
@@ -98,6 +128,7 @@ final class ChatModel {
     func streamResponse(to prompt: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
+                lastToolCalls = [] 
                 guard let session else {
                     continuation.finish(throwing: ChatModelError.notReady)
                     return
@@ -117,8 +148,15 @@ final class ChatModel {
                         continuation.yield(snapshot.content)
                     }
                     print("[ChatModel] Finished after", ContinuousClock.now - start)
+                    
+                    lastToolCalls = Self.toolCallsInLastTurn(session.transcript)
+                    print("[ChatModel] Tools used:", lastToolCalls)
                     continuation.finish()
                 } catch {
+                    print("[ChatModel] Generation failed:", error)
+                    if case .exceededContextWindowSize? = error as? LanguageModelSession.GenerationError {
+                                            startNewConversation()
+                                        }
                     print("[ChatModel] Generation failed:", error)
                     continuation.finish(throwing: error)
                 }

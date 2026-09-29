@@ -12,7 +12,7 @@ enum StockKnowledge {
     static let maxRows = 15
     
     /// Fuzzy name search: case/diacritic-insensitive, matches any word of 3+ chars
-    static func search(_ query: String, in context: ModelContext) -> throws String {
+    static func search(_ query: String, in context: ModelContext) throws -> String {
         let items = try context.fetch(FetchDescriptor<StockItem>(sortBy: [SortDescriptor(\.name)]))
         guard !items.isEmpty else { return "Belum ada stok bahan yang tercatat." }
         
@@ -24,11 +24,25 @@ enum StockKnowledge {
         
         guard !matches.isEmpty else {
             let names = items.prefix(maxRows).map(\.name).joined(separator: ", ")
-            return "Tidak ada bahan yang cocok dengan \"\(query)\". Bahan yang tercatat: \(names).
+            return "Tidak ada bahan yang cocok dengan \"\(query)\". Bahan yang tercatat: \(names)."
         }
         
         return matches.prefix(maxRows).map(describe).joined(separator: "\n")
     }
+
+    /// Pre-retrieval for every chat message: facts about items the message
+    /// mentions, or nil when it mentions none (so greetings stay untouched).
+    static func relevantFacts(for message: String, in context: ModelContext) -> String? {
+        guard let items = try? context.fetch(FetchDescriptor<StockItem>()) else { return nil }
+        let words = normalize(message).split(separator: " ").map(String.init).filter { $0.count >= 3 }
+        let matches = items.filter { item in
+            let name = normalize(item.name)
+            return words.contains { name.contains($0) }
+        }
+        guard !matches.isEmpty else { return nil }
+        return matches.prefix(maxRows).map(describe).joined(separator: "\n")
+    }
+
     
     /// All items, lowest quantity first, plus total stock value.
     static func list(onlyEmpty: Bool, in context: ModelContext) throws -> String {
