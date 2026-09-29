@@ -26,20 +26,6 @@ final class ChatModel {
     If a tool finds nothing, say so. Never invent ingredients.
     """
     
-    private static let plannerInstructions = """
-    Extract the user's intent from an Indonesian stock-keeping message.
-    Examples:
-    "stok gula berapa?" -> checkStock, items [gula]
-    "bahan apa aja yang ada?" -> listStock
-    "apa yang habis?" -> outOfStock
-    "pemakaian kopi minggu ini" -> history, items [kopi], days 7
-    "HPP bulan ini" -> history, items [], days 30
-    "beli gula 5 kg 70rb" -> addStock, items [gula], quantity 5, unit kg, totalCost 70000
-    "pakai susu 2 liter" -> useStock, items [susu], quantity 2, unit liter
-    "halo" -> other
-    If the message only answers a previous question (e.g. "70rb", "kg"), merge it with the previous message.
-    """
-    
     private static let responderInstructions = """
     You are the stock assistant for a small Indonesian food business.
     Answer in Bahasa Indonesia, 1-3 short sentences.
@@ -83,23 +69,22 @@ final class ChatModel {
         return url
     }
     
-    func plan(_ text: String, previous: String?) async throws -> StockPlan {
+    func plan<P: Generable>(_ type: P.Type, instructions: String, text: String, previous: String?) async throws -> P {
         guard let model else { throw ChatModelError.notReady }
         isGenerating = true
         defer { isGenerating = false }
 
-        let planner = LanguageModelSession(model: model, instructions: Self.plannerInstructions)
+        let planner = LanguageModelSession(model: model, instructions: instructions)
         var prompt = ""
         if let previous { prompt += "Previous message: \(previous)\n" }
         prompt += "Message: \(text)"
 
         let plan = try await planner.respond(
-            to: prompt,
-            generating: StockPlan.self,
+            to: prompt, generating: P.self,
             options: GenerationOptions(sampling: .greedy),
             contextOptions: Self.plannerContext
         ).content
-        lastTrace = ["plan: \(plan.intent) \(plan.items) qty=\(formatQuantity(plan.quantity)) \(plan.unit) cost=\(formatQuantity(plan.totalCost)) days=\(plan.days)"]
+        lastTrace = ["plan: \(plan.generatedContent.jsonString)"]
         print("[ChatModel]", lastTrace[0])
         return plan
     }

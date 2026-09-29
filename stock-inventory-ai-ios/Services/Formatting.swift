@@ -12,3 +12,8 @@ func formatQuantity(_ value: Double) -> String {
         ? String(Int(value))
         : String(format: "%.2f", value)
 }
+
+/// "Rp25.000" — whole rupiah, no decimals.
+func formatRupiah(_ value: Double) -> String {
+    value.formatted(.currency(code: "IDR").precision(.fractionLength(0)))
+}

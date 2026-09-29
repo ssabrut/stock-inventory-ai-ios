@@ -4,15 +4,22 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct PosEditorScreen: View {
-    @State private var activeShift: Shift?
+    @Environment(\.modelContext) private var context
+    /// Driven by the store rather than view state, so an open shift survives
+    /// navigating away or relaunching the app.
+    @Query(filter: #Predicate<Shift> { $0.shiftEnd == nil }, sort: \Shift.shiftStart, order: .reverse)
+    private var openShifts: [Shift]
+
+    private var store: OrderStore { OrderStore(context: context) }
 
     var body: some View {
         NavigationStack {
-            if let shift = activeShift {
+            if let shift = openShifts.first {
                 PosSaleScreen(shift: shift) {
-                    activeShift = nil
+                    try? store.endShift(shift)
                 }
             } else {
                 landingView
@@ -45,7 +52,7 @@ struct PosEditorScreen: View {
 
                 VStack(spacing: 12) {
                     Button {
-                        activeShift = Shift(id: UUID(), shiftStart: .now, shiftEnd: nil)
+                        try? store.startShift()
                     } label: {
                         Text("Mulai Shift")
                             .font(.headline)
@@ -80,7 +87,8 @@ struct PosEditorScreen: View {
 }
 
 private struct EditPosScreen: View {
-    @State private var menuItems: [MenuItem] = []
+    @Environment(\.modelContext) private var context
+    @Query(sort: \MenuItem.name) private var menuItems: [MenuItem]
     @State private var itemToEdit: MenuItem?
     @State private var itemToDelete: MenuItem?
     @State private var isPresentingNewItem = false
@@ -104,15 +112,18 @@ private struct EditPosScreen: View {
             }
         }
         .sheet(item: $itemToEdit) { item in
-            MenuItemEditorSheet(item: item) { updated in
-                if let index = menuItems.firstIndex(where: { $0.id == updated.id }) {
-                    menuItems[index] = updated
-                }
+            MenuItemEditorSheet(item: item) { draft in
+                item.name = draft.name
+                item.price = draft.price
+                item.category = draft.category.rawValue
+                item.icon = draft.icon
+                try? context.save()
             }
         }
         .sheet(isPresented: $isPresentingNewItem) {
-            MenuItemEditorSheet(item: nil) { newItem in
-                menuItems.append(newItem)
+            MenuItemEditorSheet(item: nil) { draft in
+                context.insert(MenuItem(name: draft.name, price: draft.price, category: draft.category.rawValue, icon: draft.icon))
+                try? context.save()
             }
         }
         .alert("Hapus menu ini?", isPresented: .init(
@@ -122,7 +133,8 @@ private struct EditPosScreen: View {
             Button("Batal", role: .cancel) { itemToDelete = nil }
             Button("Hapus", role: .destructive) {
                 if let item = itemToDelete {
-                    menuItems.removeAll { $0.id == item.id }
+                    context.delete(item)
+                    try? context.save()
                 }
                 itemToDelete = nil
             }
@@ -220,18 +232,27 @@ private struct MenuItemCard: View {
     }
 }
 
+/// What the menu editor hands back — the caller inserts or mutates the
+/// SwiftData model.
+private struct MenuItemDraft {
+    let name: String
+    let price: Double
+    let category: MenuCategory
+    let icon: String
+}
+
 private struct MenuItemEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let item: MenuItem?
-    let onSave: (MenuItem) -> Void
+    let onSave: (MenuItemDraft) -> Void
 
     @State private var name: String
     @State private var priceText: String
     @State private var category: MenuCategory
     @State private var icon: String
 
-    init(item: MenuItem?, onSave: @escaping (MenuItem) -> Void) {
+    init(item: MenuItem?, onSave: @escaping (MenuItemDraft) -> Void) {
         self.item = item
         self.onSave = onSave
         _name = State(initialValue: item?.name ?? "")
@@ -262,15 +283,12 @@ private struct MenuItemEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Simpan") {
-                        let price = Double(priceText) ?? 0
-                        let saved = MenuItem(
-                            id: item?.id ?? UUID(),
-                            name: name,
-                            price: price,
-                            category: category.rawValue,
+                        onSave(MenuItemDraft(
+                            name: name.trimmingCharacters(in: .whitespaces),
+                            price: Double(priceText) ?? 0,
+                            category: category,
                             icon: icon
-                        )
-                        onSave(saved)
+                        ))
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -282,4 +300,5 @@ private struct MenuItemEditorSheet: View {
 
 #Preview {
     PosEditorScreen()
+        .modelContainer(for: [MenuItem.self, Shift.self, Order.self, OrderLine.self], inMemory: true)
 }

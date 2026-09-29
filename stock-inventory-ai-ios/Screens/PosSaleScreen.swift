@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 /// Active-shift POS screen: product grid on the left, running cart/checkout
 /// on the right. Shown after a shift is started from PosEditorScreen.
@@ -11,11 +12,13 @@ struct PosSaleScreen: View {
     let shift: Shift
     let onEndShift: () -> Void
 
-    @State private var menuItems: [MenuItem] = []
+    @Environment(\.modelContext) private var context
+    @Query(sort: \MenuItem.name) private var menuItems: [MenuItem]
     @State private var selectedCategory: MenuCategory = .makanan
     @State private var cartItems: [CartItem] = []
     @State private var showEndShiftConfirm = false
     @State private var checkoutSuccessMessage: String?
+    @State private var checkoutError: String?
 
     private var filteredItems: [MenuItem] {
         menuItems.filter { $0.category.caseInsensitiveCompare(selectedCategory.rawValue) == .orderedSame }
@@ -59,6 +62,14 @@ struct PosSaleScreen: View {
             Button("OK") { checkoutSuccessMessage = nil }
         } message: {
             Text(checkoutSuccessMessage ?? "")
+        }
+        .alert("Gagal menyimpan pesanan", isPresented: .init(
+            get: { checkoutError != nil },
+            set: { if !$0 { checkoutError = nil } }
+        )) {
+            Button("OK") { checkoutError = nil }
+        } message: {
+            Text(checkoutError ?? "")
         }
     }
 
@@ -227,8 +238,13 @@ struct PosSaleScreen: View {
 
     private func checkout() {
         guard !cartItems.isEmpty else { return }
-        checkoutSuccessMessage = "Total \(total.formatted(.currency(code: "IDR").precision(.fractionLength(0)))) berhasil disimpan."
-        cartItems.removeAll()
+        do {
+            let order = try OrderStore(context: context).checkout(cartItems, in: shift)
+            checkoutSuccessMessage = "Total \(formatRupiah(order.total)) berhasil disimpan."
+            cartItems.removeAll()
+        } catch {
+            checkoutError = error.localizedDescription
+        }
     }
 }
 
@@ -312,6 +328,7 @@ private struct CartRow: View {
 
 #Preview {
     NavigationStack {
-        PosSaleScreen(shift: Shift(id: UUID(), shiftStart: .now, shiftEnd: nil), onEndShift: {})
+        PosSaleScreen(shift: Shift(), onEndShift: {})
     }
+    .modelContainer(for: [MenuItem.self, Shift.self, Order.self, OrderLine.self], inMemory: true)
 }

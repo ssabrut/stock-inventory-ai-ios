@@ -141,7 +141,9 @@ enum StockKnowledge {
         return "- \(item.name): \(formatQuantity(item.quantity)) \(item.unit)\(status), rata-rata \(rupiah(item.costPerUnit))/\(item.unit)"
     }
 
-    private static func normalize(_ text: String) -> String {
+    /// Case/diacritic-insensitive form used for all name matching. Shared
+    /// with `SalesKnowledge`.
+    static func normalize(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

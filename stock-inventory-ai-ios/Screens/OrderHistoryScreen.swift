@@ -4,11 +4,11 @@
 //
 
 import SwiftUI
+import SwiftData
 
 /// Every POS order ever rung up, grouped by the shift it was rung up under,
-/// most recent shift first. Refreshes on every appearance so it reflects
-/// orders placed during the current (or a past) shift without needing a
-/// manual reload.
+/// most recent shift first. `@Query` keeps it live, so orders placed during
+/// the current shift show up without a manual reload.
 struct OrderHistoryScreen: View {
     fileprivate struct ShiftGroup: Identifiable {
         let shift: Shift
@@ -18,8 +18,15 @@ struct OrderHistoryScreen: View {
         var total: Double { orders.reduce(0) { $0 + $1.total } }
     }
 
-    @State private var shiftGroups: [ShiftGroup] = []
+    @Query(sort: \Shift.shiftStart, order: .reverse) private var shifts: [Shift]
     @State private var expandedShiftIds: Set<UUID> = []
+
+    /// Shifts with no orders (opened and closed without a sale) are hidden.
+    private var shiftGroups: [ShiftGroup] {
+        shifts
+            .filter { !$0.orders.isEmpty }
+            .map { ShiftGroup(shift: $0, orders: $0.orders.sorted { $0.date > $1.date }) }
+    }
 
     private var totalRevenue: Double {
         shiftGroups.reduce(0) { $0 + $1.total }
@@ -143,7 +150,8 @@ private struct OrderRow: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(order.items) { line in
+                // SwiftData doesn't keep to-many order; sort for a stable list.
+                ForEach(order.items.sorted { $0.name < $1.name }) { line in
                     HStack(alignment: .top, spacing: 6) {
                         Text("•")
                         Text(line.name)
@@ -163,4 +171,5 @@ private struct OrderRow: View {
 
 #Preview {
     OrderHistoryScreen()
+        .modelContainer(for: [MenuItem.self, Shift.self, Order.self, OrderLine.self], inMemory: true)
 }

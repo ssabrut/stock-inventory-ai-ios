@@ -72,50 +72,58 @@ struct ChatScreen: View {
                             }
                         }
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: messages.count) {
                         if let last = messages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                         }
                     }
                 }
-
-                // Writes proposed by the agent only happen after an explicit tap.
-                if let action = pendingAction {
-                    HStack(spacing: 12) {
-                        Text(action.summary)
-                            .font(.subheadline)
-                        Spacer()
-                        Button("Batal") {
-                            pendingAction = nil
-                            messages.append(ChatMessage(isUser: false, text: "Dibatalkan."))
-                        }
-                        Button("Simpan") { confirm(action) }
-                            .buttonStyle(.borderedProminent)
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.1)))
-                }
-
-                HStack(spacing: 12) {
-                    TextField("Tulis pertanyaan...", text: $draft)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(
-                            Capsule().stroke(Color.gray.opacity(0.4), lineWidth: 1)
-                        )
-                        .onSubmit(send)
-
-                    Button(action: send) {
-                        Image(systemName: "arrow.up.circle")
-                            .font(.system(size: 26))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(draft.isEmpty)
-                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 12) {
+                    // Writes proposed by the agent only happen after an explicit tap.
+                    if let action = pendingAction {
+                        HStack(spacing: 12) {
+                            Text(action.summary)
+                                .font(.subheadline)
+                            Spacer()
+                            Button("Batal") {
+                                pendingAction = nil
+                                messages.append(ChatMessage(isUser: false, text: "Dibatalkan."))
+                            }
+                            Button("Simpan") { confirm(action) }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.1)))
+                    }
+
+                    HStack(spacing: 12) {
+                        TextField("Tulis pertanyaan...", text: $draft)
+                            .textFieldStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule().stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            )
+                            .onSubmit(send)
+
+                        Button(action: send) {
+                            Image(systemName: "arrow.up.circle")
+                                .font(.system(size: 26))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(draft.isEmpty)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                .padding(.top, 8)
+                .background(.background)
+            }
 
             DataReferencePanel(toolCalls: chatModel.lastTrace)
                 .frame(width: 200)
@@ -170,7 +178,7 @@ struct ChatScreen: View {
 
         Task {
             do {
-                let plan = try await chatModel.plan(text, previous: previous)
+                let plan = try await chatModel.plan(StockPlan.self, instructions: StockPlan.instructions, text: text, previous: previous)
                 switch try StockAgent(context: modelContext).execute(plan) {
                 case .reply(let reply):
                     messages[replyIndex] = ChatMessage(isUser: false, text: reply)

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftData
 
 /// POS menu is split into exactly these two categories — no free-text
 /// categories, so tools and UI both stay closed to this set.
@@ -21,8 +22,11 @@ enum MenuCategory: String, CaseIterable, Codable {
     }
 }
 
-struct MenuItem: Identifiable, Codable, Hashable {
-    let id: UUID
+/// One sellable product on the POS. Orders snapshot name/price into
+/// `OrderLine`, so editing or deleting a menu item never rewrites history.
+@Model
+final class MenuItem {
+    @Attribute(.unique) var id: UUID
     var name: String
     var price: Double
     var category: String
@@ -41,13 +45,4 @@ struct MenuItem: Identifiable, Codable, Hashable {
         self.category = category
         self.icon = icon
     }
-}
-
-extension MenuItem {
-    static let mockItems: [MenuItem] = [
-        MenuItem(name: "Nasi Goreng", price: 25000, category: "Makanan", icon: "fork.knife"),
-        MenuItem(name: "Es Teh Manis", price: 8000, category: "Minuman", icon: "cup.and.saucer.fill"),
-        MenuItem(name: "Ayam Bakar", price: 30000, category: "Makanan", icon: "flame.fill"),
-        MenuItem(name: "Kopi Susu", price: 15000, category: "Minuman", icon: "cup.and.saucer.fill")
-    ]
 }
