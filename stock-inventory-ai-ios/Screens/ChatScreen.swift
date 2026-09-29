@@ -178,8 +178,18 @@ struct ChatScreen: View {
 
         Task {
             do {
-                let plan = try await chatModel.plan(StockPlan.self, instructions: StockPlan.instructions, text: text, previous: previous)
-                switch try StockAgent(context: modelContext).execute(plan) {
+                let outcome: AgentOutcome
+                do {
+                    let plan = try await chatModel.plan(StockPlan.self, instructions: StockPlan.instructions, text: text, previous: previous)
+                    outcome = try StockAgent(context: modelContext).execute(plan)
+                } catch {
+                    // Planning failed — degrade to plain keyword retrieval so the
+                    // user still gets an answer grounded in real stock data.
+                    print("[ChatScreen] Planner failed, falling back to retrieval:", error)
+                    outcome = .facts(StockKnowledge.relevantFacts(for: text, in: modelContext) ?? "")
+                }
+
+                switch outcome {
                 case .reply(let reply):
                     messages[replyIndex] = ChatMessage(isUser: false, text: reply)
                 case .confirm(let action):

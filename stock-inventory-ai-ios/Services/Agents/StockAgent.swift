@@ -36,12 +36,35 @@ struct PendingStockAction: Identifiable {
     }
 }
 
+extension StockPlan {
+    /// Words small models tend to copy into `items` that aren't ingredients.
+    private static let nonItemWords: Set<String> = [
+        "stok", "stock", "bahan", "barang", "semua", "apa", "aja", "saja", "yang", "sisa", "hpp",
+    ]
+
+    /// Guided generation guarantees the plan's *shape*, not its *meaning* — a
+    /// small model can still emit "stok" as an item or a negative amount.
+    /// Clean those up in code before anything acts on the plan.
+    func sanitized() -> StockPlan {
+        var plan = self
+        var seen = Set<String>()
+        plan.items = items
+            .map { StockKnowledge.normalize($0) }
+            .filter { !$0.isEmpty && !Self.nonItemWords.contains($0) && seen.insert($0).inserted }
+        plan.quantity = max(0, quantity)
+        plan.totalCost = max(0, totalCost)
+        plan.days = min(max(days, 1), 365)
+        return plan
+    }
+}
+
 /// Code-driven agent: the model only extracts a `StockPlan`; everything
 /// that has to be correct — lookups, validation, writes — happens here.
 struct StockAgent {
     let context: ModelContext
 
-    func execute(_ plan: StockPlan) throws -> AgentOutcome {
+    func execute(_ rawPlan: StockPlan) throws -> AgentOutcome {
+        let plan = rawPlan.sanitized()
         switch plan.intent {
         case .checkStock:
             guard !plan.items.isEmpty else { return .facts(try StockKnowledge.list(onlyEmpty: false, in: context)) }

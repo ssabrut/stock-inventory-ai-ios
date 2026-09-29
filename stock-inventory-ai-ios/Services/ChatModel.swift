@@ -18,14 +18,7 @@ import CoreAILanguageModels
 @Observable
 final class ChatModel {
     static let shared = ChatModel(modelURL: ChatModel.bundledModelURL())
-    private static let instructions = """
-    You are the stock assistant for a small Indonesian food business.
-    Always answer in Bahasa Indonesia, short and clear.
-    For ANY question about ingredients, stock, cost or usage, call a tool first. Never guess numbers.
-    Only call record_stock when the user clearly asks to add or use stock.
-    If a tool finds nothing, say so. Never invent ingredients.
-    """
-    
+
     private static let responderInstructions = """
     You are the stock assistant for a small Indonesian food business.
     Answer in Bahasa Indonesia, 1-3 short sentences.
@@ -47,7 +40,6 @@ final class ChatModel {
 
     private(set) var loadState: LoadState = .idle
     private(set) var isGenerating = false
-    private(set) var lastToolCalls: [String] = []
 
     private var model: CoreAILanguageModel?
     private let modelURL: URL
