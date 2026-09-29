@@ -17,16 +17,27 @@ enum StockKnowledge {
         case notFound(suggestions: [String])
     }
     
-    /// Exact → partial → typo (edit distance ≤ 2). Model only has to get close.
-    static func resolve(_ name: String, in context: ModelContext) throws -> ItemMatch {
-        let items = try context.fetch(FetchDescriptor<StockItem>())
+    /// Word match → typo (edit distance ≤ 2). Model only has to get close.
+    ///
+    /// An exact name does *not* win on its own: with "Gula" and "Gula Halus"
+    /// both stocked, "gula" is ambiguous and the user is asked. Pass
+    /// `preferExact` once the user has picked, so the same name resolves.
+    static func resolve(_ name: String, in context: ModelContext, preferExact: Bool = false) throws -> ItemMatch {
+        let items = try context.fetch(FetchDescriptor<StockItem>(sortBy: [SortDescriptor(\.name)]))
         let target = normalize(name)
+        let exact = items.first { normalize($0.name) == target }
+        if preferExact, let exact { return .found(exact) }
 
-        if let exact = items.first(where: { normalize($0.name) == target }) { return .found(exact) }
-
-        let partial = items.filter { normalize($0.name).contains(target) }
-        if partial.count == 1 { return .found(partial[0]) }
-        if partial.count > 1 { return .ambiguous(partial.map(\.name)) }
+        // Every typed word appears as a whole word in the name — "gula"
+        // matches "Gula Halus" but not "Gulai Ayam".
+        let targetWords = Set(words(target))
+        let candidates = items.filter { !targetWords.isEmpty && targetWords.isSubset(of: words(normalize($0.name))) }
+        if candidates.count == 1 { return .found(candidates[0]) }
+        if candidates.count > 1 {
+            // Exact match listed first — it's the likeliest pick.
+            let ordered = (exact.map { [$0] } ?? []) + candidates.filter { $0 !== exact }
+            return .ambiguous(ordered.map(\.name))
+        }
 
         let close = items
             .map { (item: $0, distance: editDistance(normalize($0.name), target)) }
@@ -44,6 +55,10 @@ enum StockKnowledge {
                        "l": "liter", "ltr": "liter", "biji": "pcs", "buah": "pcs", "pc": "pcs"]
         let key = normalize(unit)
         return aliases[key] ?? key
+    }
+
+    static func words(_ text: String) -> [String] {
+        text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
 
     private static func editDistance(_ lhs: String, _ rhs: String) -> Int {
@@ -111,15 +126,18 @@ enum StockKnowledge {
     }
 
     /// In/out/COGS per item over the last `days` days. Empty name = all items.
-    static func history(itemName: String, days: Int, in context: ModelContext) throws -> String {
+    /// `exactName` for a resolved item, so "Gula" doesn't pull in "Gula Halus".
+    static func history(itemName: String, days: Int, exactName: Bool = false, in context: ModelContext) throws -> String {
         let start = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .distantPast
         let descriptor = FetchDescriptor<StockTransaction>(
             predicate: #Predicate { $0.date >= start },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
         let target = normalize(itemName)
-        let rows = try context.fetch(descriptor)
-            .filter { target.isEmpty || normalize($0.itemName).contains(target) }
+        let rows = try context.fetch(descriptor).filter { transaction in
+            let name = normalize(transaction.itemName)
+            return target.isEmpty || (exactName ? name == target : name.contains(target))
+        }
         guard !rows.isEmpty else { return "Tidak ada transaksi dalam \(days) hari terakhir." }
 
         let byItem = Dictionary(grouping: rows, by: \.itemName)
@@ -136,7 +154,7 @@ enum StockKnowledge {
         return lines.joined(separator: "\n")
     }
     
-    private static func describe(_ item: StockItem) -> String {
+    static func describe(_ item: StockItem) -> String {
         let status = item.quantity <= 0 ? " (HABIS)" : ""
         return "- \(item.name): \(formatQuantity(item.quantity)) \(item.unit)\(status), rata-rata \(rupiah(item.costPerUnit))/\(item.unit)"
     }

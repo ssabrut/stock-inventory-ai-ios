@@ -25,6 +25,11 @@ final class PlanLog {
     var previousMessage: String?
     var planJSON: String
     var verdictRaw: String
+    /// What the plan *should* have been, filled in from the 👎 correction
+    /// sheet. Together with `planJSON` it forms a chosen/rejected pair.
+    var correctedPlanJSON: String?
+    /// Free-text "what went wrong" from the user — for reviewing, not training.
+    var feedbackNote: String?
 
     var verdict: PlanVerdict {
         get { PlanVerdict(rawValue: verdictRaw) ?? .unrated }
@@ -38,6 +43,8 @@ final class PlanLog {
         self.previousMessage = previousMessage
         self.planJSON = planJSON
         self.verdictRaw = verdict.rawValue
+        self.correctedPlanJSON = nil
+        self.feedbackNote = nil
     }
 }
 
