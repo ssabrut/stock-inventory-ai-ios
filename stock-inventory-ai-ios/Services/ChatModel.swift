@@ -25,6 +25,27 @@ final class ChatModel {
     Only call record_stock when the user clearly asks to add or use stock.
     If a tool finds nothing, say so. Never invent ingredients.
     """
+    
+    private static let plannerInstructions = """
+    Extract the user's intent from an Indonesian stock-keeping message.
+    Examples:
+    "stok gula berapa?" -> checkStock, items [gula]
+    "bahan apa aja yang ada?" -> listStock
+    "apa yang habis?" -> outOfStock
+    "pemakaian kopi minggu ini" -> history, items [kopi], days 7
+    "HPP bulan ini" -> history, items [], days 30
+    "beli gula 5 kg 70rb" -> addStock, items [gula], quantity 5, unit kg, totalCost 70000
+    "pakai susu 2 liter" -> useStock, items [susu], quantity 2, unit liter
+    "halo" -> other
+    If the message only answers a previous question (e.g. "70rb", "kg"), merge it with the previous message.
+    """
+    
+    private static let responderInstructions = """
+    You are the stock assistant for a small Indonesian food business.
+    Answer in Bahasa Indonesia, 1-3 short sentences.
+    Use ONLY numbers from "Data stok". If the data does not answer the question, say you don't have that data.
+    If there is no data and the message is small talk, reply briefly and offer help with stock.
+    """
 
     enum LoadState: Equatable {
         case idle
@@ -32,13 +53,17 @@ final class ChatModel {
         case ready
         case failed(String)
     }
+    
+    private static let plannerContext = ContextOptions(includeSchemaInPrompt: true, reasoningLevel: .custom("none"))
+
+    private(set) var lastTrace: [String] = []
+
 
     private(set) var loadState: LoadState = .idle
     private(set) var isGenerating = false
     private(set) var lastToolCalls: [String] = []
 
     private var model: CoreAILanguageModel?
-    private var session: LanguageModelSession?
     private let modelURL: URL
 
     /// Qwen3 "thinks" before answering by default, and that reasoning is hidden
@@ -58,26 +83,25 @@ final class ChatModel {
         return url
     }
     
-    private func makeSession(model: CoreAILanguageModel) -> LanguageModelSession {
-        LanguageModelSession(
-            model: model,
-            tools: [
-                SearchStockTool(container: AppData.container),
-                ListStockTool(container: AppData.container),
-                StockHistoryTool(container: AppData.container),
-                RecordStockTool(container: AppData.container)
-            ],
-            instructions: Self.instructions
-        )
-    }
-    
-    private static func toolCallsInLastTurn(_ transcript: Transcript) -> [String] {
-        let entries = Array(transcript)
-        let start = entries.lastIndex { if case .prompt = $0 { true } else { false } } ?? 0
-        return entries[start...].flatMap { entry -> [String] in
-            guard case .toolCalls(let calls) = entry else { return [] }
-            return calls.map { "\($0.toolName) \($0.arguments.jsonString)" }
-        }
+    func plan(_ text: String, previous: String?) async throws -> StockPlan {
+        guard let model else { throw ChatModelError.notReady }
+        isGenerating = true
+        defer { isGenerating = false }
+
+        let planner = LanguageModelSession(model: model, instructions: Self.plannerInstructions)
+        var prompt = ""
+        if let previous { prompt += "Previous message: \(previous)\n" }
+        prompt += "Message: \(text)"
+
+        let plan = try await planner.respond(
+            to: prompt,
+            generating: StockPlan.self,
+            options: GenerationOptions(sampling: .greedy),
+            contextOptions: Self.plannerContext
+        ).content
+        lastTrace = ["plan: \(plan.intent) \(plan.items) qty=\(formatQuantity(plan.quantity)) \(plan.unit) cost=\(formatQuantity(plan.totalCost)) days=\(plan.days)"]
+        print("[ChatModel]", lastTrace[0])
+        return plan
     }
 
     /// Slow only the first time after install (or after an iOS update): Core AI
@@ -93,7 +117,6 @@ final class ChatModel {
             let model = try await CoreAILanguageModel(resourcesAt: modelURL, mode: .eager)
             print("[ChatModel] Model loaded in", ContinuousClock.now - start)
             self.model = model
-            session = makeSession(model: model)
             loadState = .ready
         } catch {
             print("[ChatModel] Load failed:", error)
@@ -103,60 +126,32 @@ final class ChatModel {
     
     nonisolated static func isModelCached() -> Bool {
         let aimodel = bundledModelURL()
-            .appending(path: "qwen3_0_6b_mixed_4bit_8bit_static.aimodel")
+            .appending(path: "qwen3_1_7b_6bit_static.aimodel")
         return PreparedModel.isCached(at: aimodel)
     }
-
-    /// Drops the conversation history but keeps the loaded model, so a fresh
-    /// chat costs nothing. No-op until loading finishes (which already starts
-    /// with a fresh session).
-    func startNewConversation() {
-        guard let model else { return }
-        session = makeSession(model: model)
-    }
     
-    func respond(to prompt: String) async throws -> String {
-        guard let session else {
-            throw ChatModelError.notReady
-        }
-        isGenerating = true
-        defer { isGenerating = false }
-        let response = try await session.respond(to: prompt, contextOptions: Self.contextOptions)
-        return response.content
-    }
-    
-    func streamResponse(to prompt: String) -> AsyncThrowingStream<String, Error> {
+    func streamAnswer(question: String, facts: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
-                lastToolCalls = [] 
-                guard let session else {
+                guard let model else {
                     continuation.finish(throwing: ChatModelError.notReady)
                     return
                 }
-                
+                // Fresh every turn: facts never pile up in a transcript, so no
+                // context-window overflow and no stale numbers from earlier turns.
+                let responder = LanguageModelSession(model: model, instructions: Self.responderInstructions)
+                let prompt = facts.isEmpty ? question : "Data stok:\n\(facts)\n\nPertanyaan: \(question)"
+                if !facts.isEmpty { lastTrace.append(facts) }
+
                 isGenerating = true
                 defer { isGenerating = false }
                 do {
-                    let start = ContinuousClock.now
-                    var sawFirstText = false
-                    let stream = session.streamResponse(to: prompt, contextOptions: Self.contextOptions)
+                    let stream = responder.streamResponse(to: prompt, contextOptions: Self.contextOptions)
                     for try await snapshot in stream {
-                        if !sawFirstText && !snapshot.content.isEmpty {
-                            sawFirstText = true
-                            print("[ChatModel] First text after", ContinuousClock.now - start)
-                        }
                         continuation.yield(snapshot.content)
                     }
-                    print("[ChatModel] Finished after", ContinuousClock.now - start)
-                    
-                    lastToolCalls = Self.toolCallsInLastTurn(session.transcript)
-                    print("[ChatModel] Tools used:", lastToolCalls)
                     continuation.finish()
                 } catch {
-                    print("[ChatModel] Generation failed:", error)
-                    if case .exceededContextWindowSize? = error as? LanguageModelSession.GenerationError {
-                                            startNewConversation()
-                                        }
                     print("[ChatModel] Generation failed:", error)
                     continuation.finish(throwing: error)
                 }

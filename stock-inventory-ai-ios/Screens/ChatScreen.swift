@@ -45,7 +45,9 @@ private struct DataReferencePanel: View {
 
 struct ChatScreen: View {
     private var chatModel = ChatModel.shared
-
+    @Environment(\.modelContext) private var modelContext
+    @State private var pendingAction: PendingStockAction?
+    @State private var previousUserMessage: String?
     @State private var messages: [ChatMessage] = [
         ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu hari ini?")
     ]
@@ -77,7 +79,24 @@ struct ChatScreen: View {
                     }
                 }
 
-    HStack(spacing: 12) {
+                // Writes proposed by the agent only happen after an explicit tap.
+                if let action = pendingAction {
+                    HStack(spacing: 12) {
+                        Text(action.summary)
+                            .font(.subheadline)
+                        Spacer()
+                        Button("Batal") {
+                            pendingAction = nil
+                            messages.append(ChatMessage(isUser: false, text: "Dibatalkan."))
+                        }
+                        Button("Simpan") { confirm(action) }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.1)))
+                }
+
+                HStack(spacing: 12) {
                     TextField("Tulis pertanyaan...", text: $draft)
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 16)
@@ -98,7 +117,7 @@ struct ChatScreen: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
 
-            DataReferencePanel(toolCalls: chatModel.lastToolCalls)
+            DataReferencePanel(toolCalls: chatModel.lastTrace)
                 .frame(width: 200)
                 .padding(.top, 24)
                 .padding(.trailing, 24)
@@ -106,9 +125,6 @@ struct ChatScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
-            // The model outlives this screen, but the on-screen history
-            // doesn't — start the model's side fresh too so they match.
-            chatModel.startNewConversation()
             // Normally already loaded/loading from app launch; no-op then.
             await chatModel.loadIfNeeded()
         }
@@ -142,28 +158,32 @@ struct ChatScreen: View {
 
     private func send() {
         let text = draft
-        guard !text.isEmpty, chatModel.loadState == .ready else { return }
+        guard !text.isEmpty, chatModel.loadState == .ready, !chatModel.isGenerating else { return }
         messages.append(ChatMessage(isUser: true, text: text))
         draft = ""
+        pendingAction = nil
 
         let replyIndex = messages.count
         messages.append(ChatMessage(isUser: false, text: ""))
-
-        // Ground the model in real stock data even if it skips calling a tool.
-        // The bubble shows what the user typed; only the model sees the facts.
-        let prompt: String
-        if let facts = StockKnowledge.relevantFacts(for: text, in: AppData.container.mainContext) {
-            prompt = "Data stok terkait:\n\(facts)\n\nPertanyaan: \(text)"
-        } else {
-            prompt = text
-        }
+        let previous = previousUserMessage
+        previousUserMessage = text
 
         Task {
             do {
-                for try await partial in chatModel.streamResponse(to: prompt) {
-                    messages[replyIndex] = ChatMessage(isUser: false, text: partial)
+                let plan = try await chatModel.plan(text, previous: previous)
+                switch try StockAgent(context: modelContext).execute(plan) {
+                case .reply(let reply):
+                    messages[replyIndex] = ChatMessage(isUser: false, text: reply)
+                case .confirm(let action):
+                    messages[replyIndex] = ChatMessage(isUser: false, text: "Konfirmasi: \(action.summary)?")
+                    pendingAction = action
+                    previousUserMessage = nil
+                case .facts(let facts):
+                    for try await partial in chatModel.streamAnswer(question: text, facts: facts) {
+                        messages[replyIndex] = ChatMessage(isUser: false, text: partial)
+                    }
+                    previousUserMessage = nil
                 }
-                // An empty reply would leave the typing dots spinning forever.
                 if messages[replyIndex].text.isEmpty {
                     messages[replyIndex] = ChatMessage(isUser: false, text: "Maaf, AI tidak memberikan jawaban. Coba lagi.")
                 }
@@ -172,6 +192,12 @@ struct ChatScreen: View {
             }
         }
     }
+
+    private func confirm(_ action: PendingStockAction) {
+        pendingAction = nil
+        messages.append(ChatMessage(isUser: false, text: StockAgent(context: modelContext).commit(action)))
+    }
+
 }
 
 private struct ChatBubble: View {

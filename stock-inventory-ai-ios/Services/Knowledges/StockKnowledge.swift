@@ -11,6 +11,57 @@ import SwiftData
 enum StockKnowledge {
     static let maxRows = 15
     
+    enum ItemMatch {
+        case found(StockItem)
+        case ambiguous([String])
+        case notFound(suggestions: [String])
+    }
+    
+    /// Exact → partial → typo (edit distance ≤ 2). Model only has to get close.
+    static func resolve(_ name: String, in context: ModelContext) throws -> ItemMatch {
+        let items = try context.fetch(FetchDescriptor<StockItem>())
+        let target = normalize(name)
+
+        if let exact = items.first(where: { normalize($0.name) == target }) { return .found(exact) }
+
+        let partial = items.filter { normalize($0.name).contains(target) }
+        if partial.count == 1 { return .found(partial[0]) }
+        if partial.count > 1 { return .ambiguous(partial.map(\.name)) }
+
+        let close = items
+            .map { (item: $0, distance: editDistance(normalize($0.name), target)) }
+            .filter { $0.distance <= 2 }
+            .sorted { $0.distance < $1.distance }
+        if let best = close.first, close.count == 1 || close[1].distance > best.distance {
+            return .found(best.item)
+        }
+        return .notFound(suggestions: close.prefix(3).map(\.item.name))
+    }
+
+    /// Maps what people type to the canonical units in `StockUnits`.
+    static func normalizeUnit(_ unit: String) -> String {
+        let aliases = ["kilo": "kg", "kilogram": "kg", "gr": "gram", "g": "gram",
+                       "l": "liter", "ltr": "liter", "biji": "pcs", "buah": "pcs", "pc": "pcs"]
+        let key = normalize(unit)
+        return aliases[key] ?? key
+    }
+
+    private static func editDistance(_ lhs: String, _ rhs: String) -> Int {
+        let a = Array(lhs), b = Array(rhs)
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var previous = Array(0...b.count)
+        for i in 1...a.count {
+            var current = [i] + Array(repeating: 0, count: b.count)
+            for j in 1...b.count {
+                current[j] = min(previous[j] + 1, current[j - 1] + 1,
+                                 previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+            }
+            previous = current
+        }
+        return previous[b.count]
+    }
+    
     /// Fuzzy name search: case/diacritic-insensitive, matches any word of 3+ chars
     static func search(_ query: String, in context: ModelContext) throws -> String {
         let items = try context.fetch(FetchDescriptor<StockItem>(sortBy: [SortDescriptor(\.name)]))
