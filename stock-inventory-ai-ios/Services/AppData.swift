@@ -10,7 +10,7 @@ import SwiftData
 enum AppData {
     static let container: ModelContainer = {
         do {
-            return try ModelContainer(for: StockItem.self, StockTransaction.self, MenuItem.self, Shift.self, Order.self, OrderLine.self)
+            return try ModelContainer(for: StockItem.self, StockTransaction.self, MenuItem.self, Shift.self, Order.self, OrderLine.self, PlanLog.self)
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }

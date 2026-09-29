@@ -10,6 +10,9 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     let isUser: Bool
     let text: String
+    /// The `PlanLog` behind this reply, when collection is on — enables 👍/👎.
+    var logID: PersistentIdentifier? = nil
+    var verdict: PlanVerdict = .unrated
 }
 
 private struct DataReferencePanel: View {
@@ -52,6 +55,7 @@ struct ChatScreen: View {
         ChatMessage(isUser: false, text: "Halo! Ada yang bisa saya bantu hari ini?")
     ]
     @State private var draft: String = ""
+    @State private var datasetExport: PlanDataset.Export?
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -61,13 +65,23 @@ struct ChatScreen: View {
                         .font(.title2.bold())
                     Spacer()
                     statusView
+                    if PlanLog.isCollectionEnabled {
+                        Button {
+                            exportDataset()
+                        } label: {
+                            Label("Ekspor data latih", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
 
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
                             ForEach(messages) { message in
-                                ChatBubble(message: message)
+                                ChatBubble(message: message) { verdict in
+                                    rate(message.id, verdict)
+                                }
                                     .id(message.id)
                             }
                         }
@@ -136,6 +150,22 @@ struct ChatScreen: View {
             // Normally already loaded/loading from app launch; no-op then.
             await chatModel.loadIfNeeded()
         }
+        .sheet(item: $datasetExport) { export in
+            VStack(spacing: 16) {
+                Text("Data latih planner")
+                    .font(.headline)
+                Text("\(export.goodCount) contoh 👍 siap latih, \(export.badCount) contoh 👎 perlu diperbaiki.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                ShareLink(items: [export.trainURL, export.reviewURL]) {
+                    Label("Bagikan file JSONL", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(24)
+            .presentationDetents([.medium])
+        }
     }
 
     @ViewBuilder
@@ -177,10 +207,12 @@ struct ChatScreen: View {
         previousUserMessage = text
 
         Task {
+            var logID: PersistentIdentifier?
             do {
                 let outcome: AgentOutcome
                 do {
                     let plan = try await chatModel.plan(StockPlan.self, instructions: StockPlan.instructions, text: text, previous: previous)
+                    logID = PlanLog.record(plan, message: text, previous: previous, in: modelContext)
                     outcome = try StockAgent(context: modelContext).execute(plan)
                 } catch {
                     // Planning failed — degrade to plain keyword retrieval so the
@@ -208,6 +240,8 @@ struct ChatScreen: View {
             } catch {
                 messages[replyIndex] = ChatMessage(isUser: false, text: "Maaf, terjadi kesalahan: \(error.localizedDescription)")
             }
+            // Attached last: streaming replaces the message on every partial.
+            messages[replyIndex].logID = logID
         }
     }
 
@@ -216,30 +250,73 @@ struct ChatScreen: View {
         messages.append(ChatMessage(isUser: false, text: StockAgent(context: modelContext).commit(action)))
     }
 
+    /// 👍/👎 rates the *plan* (did the AI understand the request?) — check the
+    /// side panel's `plan:` line when the answer looks off.
+    private func rate(_ messageID: UUID, _ verdict: PlanVerdict) {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }),
+              let logID = messages[index].logID,
+              let log = modelContext.model(for: logID) as? PlanLog
+        else { return }
+        log.verdict = verdict
+        try? modelContext.save()
+        messages[index].verdict = verdict
+    }
+
+    private func exportDataset() {
+        do {
+            datasetExport = try PlanDataset.export(from: modelContext)
+        } catch {
+            messages.append(ChatMessage(isUser: false, text: "Gagal ekspor data latih: \(error.localizedDescription)"))
+        }
+    }
+
 }
 
 private struct ChatBubble: View {
     let message: ChatMessage
+    let onRate: (PlanVerdict) -> Void
 
     var body: some View {
         HStack {
             if message.isUser { Spacer(minLength: 40) }
-            Group {
-                if !message.isUser && message.text.isEmpty {
-                    TypingIndicator()
-                } else {
-                    Text(message.text)
-                        .font(.subheadline)
+            VStack(alignment: .leading, spacing: 4) {
+                Group {
+                    if !message.isUser && message.text.isEmpty {
+                        TypingIndicator()
+                    } else {
+                        Text(message.text)
+                            .font(.subheadline)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(message.isUser ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.12))
+                )
+
+                if message.logID != nil {
+                    HStack(spacing: 12) {
+                        rateButton(.good, systemImage: "hand.thumbsup")
+                        rateButton(.bad, systemImage: "hand.thumbsdown")
+                    }
+                    .padding(.leading, 8)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(message.isUser ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.12))
-            )
             if !message.isUser { Spacer(minLength: 40) }
         }
+    }
+
+    private func rateButton(_ verdict: PlanVerdict, systemImage: String) -> some View {
+        Button {
+            onRate(verdict)
+        } label: {
+            Image(systemName: message.verdict == verdict ? "\(systemImage).fill" : systemImage)
+                .font(.caption)
+                .foregroundStyle(message.verdict == verdict ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(verdict == .good ? "Rencana benar" : "Rencana salah")
     }
 }
 

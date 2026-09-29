@@ -61,18 +61,23 @@ final class ChatModel {
         return url
     }
     
+    /// Single source of the planner's user turn. `PlanDataset` exports with
+    /// this too, so fine-tuning data matches what the model sees at runtime.
+    static func plannerPrompt(text: String, previous: String?) -> String {
+        var prompt = ""
+        if let previous { prompt += "Previous message: \(previous)\n" }
+        prompt += "Message: \(text)"
+        return prompt
+    }
+
     func plan<P: Generable>(_ type: P.Type, instructions: String, text: String, previous: String?) async throws -> P {
         guard let model else { throw ChatModelError.notReady }
         isGenerating = true
         defer { isGenerating = false }
 
         let planner = LanguageModelSession(model: model, instructions: instructions)
-        var prompt = ""
-        if let previous { prompt += "Previous message: \(previous)\n" }
-        prompt += "Message: \(text)"
-
         let plan = try await planner.respond(
-            to: prompt, generating: P.self,
+            to: Self.plannerPrompt(text: text, previous: previous), generating: P.self,
             options: GenerationOptions(sampling: .greedy),
             contextOptions: Self.plannerContext
         ).content
