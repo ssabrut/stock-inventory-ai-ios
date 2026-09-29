@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct stock_inventory_ai_iosApp: App {
@@ -13,5 +14,6 @@ struct stock_inventory_ai_iosApp: App {
         WindowGroup {
             RootView()
         }
+        .modelContainer(for: [StockItem.self, StockTransaction.self])
     }
 }
